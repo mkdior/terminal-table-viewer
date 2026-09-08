@@ -19,9 +19,11 @@ var (
 )
 
 // Operator-pending state: d waits for a motion (dj, d$) or for itself (dd),
-// as in vim. pendingOpCount is the count typed before the operator.
+// as in vim. pendingOpRaw is the count typed before the operator (0 when
+// none) and pendingOpCount the same as a repeat factor (at least 1).
 var (
 	pendingOp      action
+	pendingOpRaw   int
 	pendingOpCount int
 )
 
@@ -110,7 +112,7 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 	if act == actDelete {
-		pendingOp, pendingOpCount = act, count
+		pendingOp, pendingOpRaw, pendingOpCount = act, rawCount, count
 		drawFooterText(fileNameStr, statusMessage, pendingKeys()+"  |  "+cursorPosStr)
 		return nil
 	}
@@ -131,8 +133,8 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 func pendingKeys() string {
 	s := ""
 	if pendingOp != "" {
-		if pendingOpCount > 1 {
-			s = strconv.Itoa(pendingOpCount)
+		if pendingOpRaw > 0 {
+			s = strconv.Itoa(pendingOpRaw)
 		}
 		s += keys.keysFor(pendingOp)
 	}
@@ -147,7 +149,7 @@ func cancelOperator() {
 	if pendingOp == "" {
 		return
 	}
-	pendingOp, pendingOpCount = "", 0
+	pendingOp, pendingOpRaw, pendingOpCount = "", 0, 0
 	drawFooterText(fileNameStr, statusMessage, cursorPosStr)
 }
 
@@ -161,15 +163,19 @@ func saturatingMul(a, b int) int {
 
 // finishOperator completes a pending operator with the key that followed it:
 // the operator itself works on the current row (dd), a motion on the rows or
-// columns it spans, and anything else cancels it, as in vim.
+// columns it spans, and anything else cancels it, as in vim. A count before
+// the operator and one after it multiply (2d3j), and a count on either side
+// reaches absolute motions (2dG works on rows 2 to the cursor).
 func finishOperator(act action, info actionInfo, rawCount, count int) {
-	op, opCount := pendingOp, pendingOpCount
-	pendingOp, pendingOpCount = "", 0
+	op, opRaw, opCount := pendingOp, pendingOpRaw, pendingOpCount
+	pendingOp, pendingOpRaw, pendingOpCount = "", 0, 0
 	row, col := bufferTable.GetSelection()
-	if opCount > 1 {
+	if opRaw > 0 {
 		count = saturatingMul(count, opCount)
 		if rawCount > 0 {
-			rawCount = saturatingMul(rawCount, opCount)
+			rawCount = saturatingMul(rawCount, opRaw)
+		} else {
+			rawCount = opRaw
 		}
 	}
 	switch {

@@ -249,7 +249,8 @@ func deleteColumns(c1, c2 int, toClipboard bool) {
 }
 
 // clearCells empties the cells in rows r1..r2, columns c1..c2 of the view as
-// one edit. Cells that are already empty are left alone.
+// one edit. Cells that are already empty are left alone. Like every edit it
+// re-derives a filtered view, so a row that stops matching disappears.
 func clearCells(r1, c1, r2, c2 int) {
 	if !editsAllowed() {
 		return
@@ -273,8 +274,8 @@ func clearCells(r1, c1, r2, c2 int) {
 		return
 	}
 	edits = append(edits, edit{cells: changes})
-	resetSearch()
-	editStatus("Cleared " + plural(len(changes), "cell"))
+	row, col := bufferTable.GetSelection()
+	editStatus("Cleared " + plural(len(changes), "cell") + refreshView(row, col))
 }
 
 // changeCell records the previous value of one cell and stores the new one as
@@ -294,8 +295,7 @@ func changeCell(rowIdx, col int, value string) {
 	if b != base {
 		b.trackWidth(col, value)
 	}
-	resetSearch()
-	editStatus(fmt.Sprintf("Changed %s at row %d", columnTitle(col), rowIdx))
+	editStatus(fmt.Sprintf("Changed %s at row %d", columnTitle(col), rowIdx) + refreshView(rowIdx, col))
 }
 
 // undoEdits reverts the n most recent edits.

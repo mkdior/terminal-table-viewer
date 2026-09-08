@@ -105,7 +105,7 @@ func initView() {
 	lastGPress = time.Time{}                    // Initialize vim navigation state
 	pendingCount = 0
 	pendingChord = nil
-	pendingOp, pendingOpCount = "", 0
+	pendingOp, pendingOpRaw, pendingOpCount = "", 0, 0
 	visual = visualOff
 	edits = nil
 	sourceStat, loadStopped = nil, false

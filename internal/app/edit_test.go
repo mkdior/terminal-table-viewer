@@ -297,16 +297,61 @@ func TestEditsThroughFilteredView(t *testing.T) {
 		t.Errorf("width limits after undo: %v", wrappedColumns)
 	}
 
-	// Clearing the only matching cell empties the view on the next refresh:
-	// the filters are dropped instead of showing an empty table.
-	activeFilters[0] = FilterOptions{Query: "a2", Operator: "equals"}
+	// A cell edit re-derives the view at once: a row that stops matching
+	// disappears, and when nothing matches any more the filters are dropped
+	// instead of showing an empty table.
+	activeFilters[0] = FilterOptions{Query: "a2|a4", Operator: "regex"}
 	isFiltered = true
 	b = applyActiveFilters(originalBuffer)
 	drawBuffer(b, bufferTable)
 	bufferTable.Select(1, 0)
-	press(t, "x S") // clear a2, then sort (a refresh)
+	press(t, "x") // clear a2: the row no longer matches
+	if got := joined(column(b, 0)); got != "h1 a4" || !isFiltered {
+		t.Errorf("clearing the matching cell must drop the row from the view: %q", got)
+	}
+	press(t, "x") // clear a4 as well: no rows match, the filters go
 	if isFiltered || len(activeFilters) != 0 || b != originalBuffer || !strings.Contains(statusMessage, "filters cleared") {
 		t.Errorf("empty view must clear filters: filtered=%v filters=%v status %q", isFiltered, activeFilters, statusMessage)
+	}
+	if b.cont[2][0] != "" || b.cont[4][0] != "" {
+		t.Errorf("the cells were cleared in the table: %q %q", b.cont[2][0], b.cont[4][0])
+	}
+}
+
+// setupTallTable installs a header plus 9 rows r1..r9 (one column).
+func setupTallTable(t *testing.T) {
+	t.Helper()
+	setupEditTable(t)
+	data := [][]string{{"h1", "h2"}}
+	for i := 1; i <= 9; i++ {
+		data = append(data, []string{"r" + I2S(i), "x"})
+	}
+	buf, err := createNewBufferWithData(data, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf.rowFreeze = 1
+	b = buf
+	drawBuffer(b, bufferTable)
+	bufferTable.Select(1, 0)
+}
+
+func TestDeleteOperatorCountsWithAbsoluteMotions(t *testing.T) {
+	cases := []struct{ keys, want string }{
+		{"4 j 2 d G", "h1 r1 r6 r7 r8 r9"},         // rows 2..5, as vim's 2dG from row 5
+		{"4 j 2 d g g", "h1 r1 r6 r7 r8 r9"},       // the same range with gg
+		{"4 j 1 d G", "h1 r6 r7 r8 r9"},            // an explicit 1 is a row number: rows 1..5 go
+		{"4 j d 2 G", "h1 r1 r6 r7 r8 r9"},         // the count after the operator reaches G too
+		{"4 j 2 d 3 G", "h1 r1 r2 r3 r4 r7 r8 r9"}, // counts multiply: 6G, rows 5..6
+		{"2 d 3 j", "h1 r8 r9"},                    // six rows down from row 1: rows 1..7 go
+		{"4 j d G", "h1 r1 r2 r3 r4"},              // no count: to the last row
+	}
+	for _, tc := range cases {
+		setupTallTable(t)
+		press(t, tc.keys)
+		if got := joined(column(b, 0)); got != tc.want {
+			t.Errorf("%q: %q, want %q", tc.keys, got, tc.want)
+		}
 	}
 }
 
