@@ -78,7 +78,7 @@ var actionCatalog = []struct {
 	{actionInfo{actPrevColumn, "Movement", "Previous column", true}, []string{"b"}},
 	{actionInfo{actFirstRow, "Movement", "First row; with a count, row N", true}, []string{"g g", "home"}},
 	{actionInfo{actLastRow, "Movement", "Last row; with a count, row N", true}, []string{"G", "end"}},
-	{actionInfo{actFirstColumn, "Movement", "First column", true}, []string{"0"}},
+	{actionInfo{actFirstColumn, "Movement", "First column", true}, []string{"0", "^"}},
 	{actionInfo{actLastColumn, "Movement", "Last column", true}, []string{"$"}},
 	{actionInfo{actHalfPageDown, "Movement", "Half a page down; with a count, N rows", true}, []string{"ctrl+d"}},
 	{actionInfo{actHalfPageUp, "Movement", "Half a page up; with a count, N rows", true}, []string{"ctrl+u"}},

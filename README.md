@@ -239,7 +239,8 @@ w: next column
 b: previous column
 gg: first row
 G: last row
-0: first column
+0, ^: first column (a stray `0` while typing a count jumps here; unbind
+    `0` from `first_column` in the config if that bites)
 $: last column
 Ctrl-d: half a page down
 Ctrl-u: half a page up
