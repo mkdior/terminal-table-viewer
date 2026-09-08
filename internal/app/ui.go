@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -422,9 +421,8 @@ func drawUI(b *Buffer) error {
 	if statusMessage == "" {
 		statusMessage = "All Done"
 	}
-	shorFileName := filepath.Base(args.FileName)
-	fileNameStr = shorFileName + "  |  " + "? help" //footer left
-	filterInfoStr := buildFilterInfoStr(0)          // Top strip for filter info, initially at column 0
+	fileNameStr = footerFileName()         //footer left
+	filterInfoStr := buildFilterInfoStr(0) // Top strip for filter info, initially at column 0
 
 	mainPage = tview.NewFrame(bufferTable).
 		SetBorders(0, 0, 0, 0, 0, 0)

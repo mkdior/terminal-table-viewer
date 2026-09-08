@@ -22,7 +22,7 @@ func TestApplyConfigKeysAndTheme(t *testing.T) {
 	src := `
 [keys]
 move_left = "a"
-move_right = ["d", "right"]
+move_right = ["m", "right"]
 first_row = "g g"
 quit = []
 [theme]
@@ -44,7 +44,7 @@ text = "white"
 	if act, _ := keys.resolve([]keyStroke{{key: tcell.KeyRune, ch: 'h'}}); act != "" {
 		t.Errorf("h should be unbound after remapping move_left, got %q", act)
 	}
-	if got := keys.keysFor(actMoveRight); got != "d, Right" {
+	if got := keys.keysFor(actMoveRight); got != "m, Right" {
 		t.Errorf("move_right keys = %q", got)
 	}
 	if act, _ := keys.resolve([]keyStroke{{key: tcell.KeyRune, ch: 'q'}}); act != "" {

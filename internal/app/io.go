@@ -283,18 +283,20 @@ func loadToBuffer(src loadSource, b *Buffer, updateChan chan<- bool, showProgres
 		return err
 	}
 
-	loadProgress.IsComplete.Store(true)
-
+	// IsComplete is set once post-processing is over as well: it gates editing,
+	// and type detection indexes columns by position.
 	if updateChan != nil {
 		// Async mode: do not hold up the "loaded" signal for post-processing.
 		// Interning reads column types, so the two steps must run in order.
 		go func() {
 			b.detectAllColumnTypes()
 			b.enableStringInterning()
+			loadProgress.IsComplete.Store(true)
 		}()
 	} else {
 		b.detectAllColumnTypes()
 		b.enableStringInterning()
+		loadProgress.IsComplete.Store(true)
 	}
 	return loadErr
 }

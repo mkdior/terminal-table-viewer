@@ -45,6 +45,11 @@ const (
 	actVisual       action = "visual"
 	actVisualRow    action = "visual_row"
 	actVisualSwap   action = "visual_swap"
+	actDelete       action = "delete"
+	actCut          action = "cut"
+	actClear        action = "clear"
+	actUndo         action = "undo"
+	actWrite        action = "write"
 )
 
 // actionInfo describes an action for the help dialog and the config file.
@@ -88,6 +93,10 @@ var actionCatalog = []struct {
 	{actionInfo{actVisual, "Visual", "Select a block of cells; move to extend, y to copy, Esc or q to cancel", false}, []string{"v", "ctrl+v"}},
 	{actionInfo{actVisualRow, "Visual", "Select whole rows", false}, []string{"V"}},
 	{actionInfo{actVisualSwap, "Visual", "Swap the anchor and the cursor of the selection", false}, []string{"o"}},
+	{actionInfo{actDelete, "Edit", "Remove: dd the row, d+motion the rows (dj, dG) or columns (dl, d$) it spans; in visual mode the selected rows (V) or columns (v)", false}, []string{"d"}},
+	{actionInfo{actCut, "Edit", "Remove and copy to the clipboard: the row, or the visual selection", false}, []string{"X"}},
+	{actionInfo{actClear, "Edit", "Clear the cell; with a count, N cells to the right; in visual mode the selected cells", false}, []string{"x"}},
+	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
 	{actionInfo{actToggleWidth, "View", "Toggle the 50 character width limit on the current column", false}, []string{"W"}},
 	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"i"}},
 	{actionInfo{actHelp, "View", "Show this help", false}, []string{"?"}},
