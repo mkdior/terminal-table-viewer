@@ -54,6 +54,7 @@ const (
 	actInsert       action = "insert"
 	actAppend       action = "append"
 	actChange       action = "change"
+	actPaste        action = "paste"
 )
 
 // actionInfo describes an action for the help dialog and the config file.
@@ -104,6 +105,7 @@ var actionCatalog = []struct {
 	{actionInfo{actInsert, "Edit", "Edit the cell, inserting at the start; in visual mode the text is inserted in every selected cell (Esc applies)", false}, []string{"i", "ctrl+i"}},
 	{actionInfo{actAppend, "Edit", "Edit the cell, appending at the end; in visual mode the text is appended to every selected cell", false}, []string{"a"}},
 	{actionInfo{actChange, "Edit", "Clear the cell and type its new value; in visual mode every selected cell gets it", false}, []string{"c c"}},
+	{actionInfo{actPaste, "Edit", "Paste the last yank or removal over the cell; a block is laid out from the cursor, in visual mode a single value fills the selection", false}, []string{"p", "P"}},
 	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
 	{actionInfo{actWrite, "Edit", "Write the table back to the file (the original is kept in the backup directory)", false}, []string{"W"}},
 	{actionInfo{actToggleWidth, "View", "Toggle the 50 character width limit on the current column", false}, []string{"_"}},

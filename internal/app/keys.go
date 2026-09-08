@@ -106,6 +106,11 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 			visual = visualOff
 			startBulkEdit(act, r1, c1, r2, c2)
 			return nil
+		case actPaste:
+			r1, c1, r2, c2 := visualRect()
+			visual = visualOff
+			pasteCells(r1, c1, r2, c2)
+			return nil
 		case actCancel, actQuit:
 			// In visual mode q backs out of the selection like Esc; it never quits.
 			exitVisual("All Done")
@@ -321,6 +326,8 @@ func runAction(act action, rawCount, count int) {
 		deleteRows(row, row+count-1, true)
 	case actClear:
 		clearCells(row, col, row, col+count-1)
+	case actPaste:
+		pasteCells(row, col, row, col)
 	case actUndo:
 		undoEdits(count)
 	case actEdit, actInsert, actAppend, actChange:

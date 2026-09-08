@@ -36,6 +36,63 @@ type cellChange struct {
 // edits is the undo stack: the changes not yet written, oldest first.
 var edits []edit
 
+// tableRegister holds the cells of the last yank or removal, for p and P.
+// Like vim's unnamed register it is filled by y, Y, visual y, X and d; x
+// (clear) leaves it alone so a yanked value survives clearing other cells.
+var tableRegister [][]string
+
+// setRegister records a yanked or removed block; a single cell also becomes
+// the line editor's register, so it can be pasted inside another cell.
+func setRegister(block [][]string) {
+	if len(block) == 0 || len(block[0]) == 0 {
+		return
+	}
+	tableRegister = block
+	if len(block) == 1 && len(block[0]) == 1 {
+		lineRegister = []rune(block[0][0])
+	}
+}
+
+// pasteCells replaces cells with the register. A single value fills rows
+// r1..r2, columns c1..c2 (the cursor cell, or the visual selection); a block
+// is laid out from the top-left corner and clipped to the table. When nothing
+// was yanked from the table, the line editor's register is pasted.
+func pasteCells(r1, c1, r2, c2 int) {
+	if !editsAllowed() {
+		return
+	}
+	reg := tableRegister
+	if len(reg) == 0 && len(lineRegister) > 0 {
+		reg = [][]string{{string(lineRegister)}}
+	}
+	if len(reg) == 0 || len(reg[0]) == 0 {
+		drawFooterText(fileNameStr, "Nothing to paste", cursorPosStr)
+		return
+	}
+	var targets []cellTarget
+	if len(reg) == 1 && len(reg[0]) == 1 {
+		v := reg[0][0]
+		targets = rectTargets(r1, c1, r2, c2, func(string) string { return v })
+	} else {
+		top, _ := orderRange(r1, r2, firstDataRow(b), b.rowLen-1)
+		left, _ := orderRange(c1, c2, 0, b.colLen-1)
+		for i, row := range reg {
+			r := top + i
+			if r >= b.rowLen {
+				break
+			}
+			for j, v := range row {
+				if c := left + j; c < len(b.cont[r]) {
+					targets = append(targets, cellTarget{b.cont[r], c, v})
+				}
+			}
+		}
+	}
+	if setCells(targets, "Pasted") == 0 {
+		drawFooterText(fileNameStr, "No change", cursorPosStr)
+	}
+}
+
 // dirty reports whether the table differs from the file.
 func dirty() bool { return len(edits) > 0 }
 
@@ -198,15 +255,17 @@ func deleteRows(r1, r2 int, toClipboard bool) {
 		return
 	}
 	_, col := bufferTable.GetSelection()
+	block := b.cellBlock(r1, 0, r2, b.colLen-1)
 	did := "Removed " + plural(n, "row")
 	if toClipboard {
 		// The rows leave the table only once the clipboard has accepted them.
-		channels, ok := cutToClipboard(tsv(b.cellBlock(r1, 0, r2, b.colLen-1)))
+		channels, ok := cutToClipboard(tsv(block))
 		if !ok {
 			return
 		}
 		did = "Cut " + plural(n, "row") + " to " + channels
 	}
+	setRegister(block)
 	removed := baseBuffer().removeRows(b.cont[r1 : r2+1])
 	edits = append(edits, edit{rows: removed})
 	editStatus(did + refreshView(r1, col))
@@ -241,6 +300,7 @@ func deleteColumns(c1, c2 int, toClipboard bool) {
 		}
 		did = "Cut " + plural(k, "column") + " (" + strings.Join(names, ", ") + ") to " + channels
 	}
+	setRegister(base.cellBlock(base.rowFreeze, c1, base.rowLen-1, c2)) // the data cells, for p
 	e := edit{colAt: c1, cols: base.removeColumns(c1, c2), names: names}
 	e.filters = dropColumnKeys(activeFilters, c1, c2)
 	e.widths = dropColumnKeys(wrappedColumns, c1, c2)

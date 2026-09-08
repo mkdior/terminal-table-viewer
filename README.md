@@ -289,6 +289,8 @@ i, Ctrl-I, a: edit the cell, inserting at the start or appending at the end;
     in visual mode the text goes into every selected cell
 cc: clear the cell and type its new value; in visual mode every selected
     cell gets it
+p, P: paste the last yank or removal over the cell; a block is laid out from
+    the cursor, in visual mode a single value fills the selection
 u: undo the last edit; with a count, N edits
 W: write the table back to the file
 
@@ -475,6 +477,12 @@ Bulk edit: in visual mode `i` (or Ctrl-I), `a` and `cc` work like vim's
     (`cc`) in every selected cell when you press Esc or Enter, as one undo
     step. Select five empty cells with `Ctrl-v`, press `Ctrl-I`, type, Esc:
     all five hold the text.
+Paste: `y`, `Y`, a visual yank, `X` and `d` also fill an in-app register
+    (the system clipboard is never read). `p` or `P` replaces the cell under
+    the cursor with it; a yanked block is laid out from the cursor and clipped
+    to the table; in visual mode a single value fills every selected cell.
+    Text yanked inside the cell editor pastes into a cell the same way. `x`
+    does not touch the register, so a yanked value survives clearing cells.
 Filters: an edit made in a filtered view changes the unfiltered table too. A
     removed column takes its filter and width limit with it, and `u` brings
     them back. Sorting is an edit as well: it applies to the whole table, is
@@ -566,7 +574,8 @@ Actions: `move_left`, `move_right`, `move_down`, `move_up`, `next_column`,
     `cancel`, `filter`, `remove_filter`, `sort_asc`, `sort_desc`,
     `toggle_type`, `yank`, `yank_row`, `visual`, `visual_row`,
     `visual_swap`, `delete`, `cut`, `clear`, `edit`, `insert`, `append`,
-    `change`, `undo`, `write`, `toggle_width`, `stats`, `help`, `quit`
+    `change`, `paste`, `undo`, `write`, `toggle_width`, `stats`, `help`,
+    `quit`
 
 ```toml
 [keys]

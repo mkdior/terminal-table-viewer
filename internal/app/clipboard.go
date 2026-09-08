@@ -176,6 +176,7 @@ func tsv(rows [][]string) string {
 // outcome in the footer. Rows r1..r2 and columns c1..c2 are inclusive.
 func yankCells(r1, c1, r2, c2 int) {
 	rows := b.cellBlock(r1, c1, r2, c2)
+	setRegister(rows)
 	text := tsv(rows)
 	what := fmt.Sprintf("%d rows x %d columns", len(rows), c2-c1+1)
 	if len(rows) == 1 && c1 == c2 {

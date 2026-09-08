@@ -409,3 +409,87 @@ func TestEditSummaryWording(t *testing.T) {
 		t.Error("plural")
 	}
 }
+
+func TestYankAndPasteCells(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { tableRegister, lineRegister, cellEdit = nil, nil, nil })
+	stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
+
+	press(t, "y j p") // a1 over a2
+	if b.cont[2][0] != "a1" || editSummary() != "1 cell changed" || !strings.Contains(statusMessage, "Pasted 1 cell") {
+		t.Fatalf("p: %q summary %q status %q", b.cont[2][0], editSummary(), statusMessage)
+	}
+	if string(lineRegister) != "a1" {
+		t.Errorf("a single-cell yank also feeds the editor register: %q", string(lineRegister))
+	}
+	press(t, "l v j P") // fill (2,1) and (3,1) with the single value
+	if b.cont[2][1] != "a1" || b.cont[3][1] != "a1" || b.cont[4][1] != "b4" {
+		t.Errorf("visual paste of one value fills the selection: %v", column(b, 1))
+	}
+	press(t, "u u")
+	if b.cont[2][0] != "a2" || b.cont[3][1] != "b3" || dirty() {
+		t.Error("undo restores pasted cells")
+	}
+
+	// A block pastes from the cursor and is clipped at the table's edge.
+	setupEditTable(t)
+	press(t, "v j l y")         // a1 b1 / a2 b2; the cursor stays at (2,1)
+	press(t, "g g 0 2 j 2 l p") // top-left (3,2)
+	if b.cont[3][2] != "a1" || b.cont[3][3] != "b1" || b.cont[4][2] != "a2" || b.cont[4][3] != "b2" {
+		t.Errorf("block paste: %v %v", b.cont[3], b.cont[4])
+	}
+	press(t, "u G 0 2 l p") // at (4,2) only one row is left: two cells change
+	if b.cont[4][2] != "a1" || b.cont[4][3] != "b1" || !strings.Contains(statusMessage, "Pasted 2 cells") {
+		t.Errorf("clipped block paste: %v status %q", b.cont[4], statusMessage)
+	}
+
+	// Y yanks the row; P lays it over another row.
+	setupEditTable(t)
+	press(t, "Y 2 j P")
+	if got := strings.Join(b.cont[3], " "); got != "a1 b1 c1 d1" {
+		t.Errorf("row paste: %q", got)
+	}
+
+	// X and d fill the register like vim; p puts the removed row elsewhere.
+	setupEditTable(t)
+	press(t, "X j p") // cut a1's row (cursor lands on a2), paste over a3
+	if got := strings.Join(b.cont[2], " "); got != "a1 b1 c1 d1" || b.rowLen != 4 {
+		t.Errorf("paste after cut: %q rows %d", got, b.rowLen)
+	}
+	setupEditTable(t)
+	press(t, "d d G p") // dd fills the register too
+	if got := strings.Join(b.cont[3], " "); got != "a1 b1 c1 d1" {
+		t.Errorf("paste after dd: %q", got)
+	}
+
+	// x does not touch the register, so the yank survives clearing.
+	setupEditTable(t)
+	press(t, "y l x l p")
+	if b.cont[1][2] != "a1" || b.cont[1][1] != "" {
+		t.Errorf("x must not overwrite the register: %v", b.cont[1])
+	}
+
+	// A column removal pastes its data cells downwards, without the header.
+	setupEditTable(t)
+	press(t, "l v X g g 0 l l p") // cut column h2 (visual block X), paste over what is now the third column (h4)
+	if b.cont[1][2] != "b1" || b.cont[4][2] != "b4" || b.cont[0][2] != "h4" {
+		t.Errorf("column cut then paste: %v", column(b, 2))
+	}
+
+	// The editor's register is pasted when nothing was yanked from the table.
+	setupEditTable(t)
+	tableRegister, lineRegister = nil, nil
+	press(t, "E y y esc j p")
+	if b.cont[2][0] != "a1" {
+		t.Errorf("editor yank pasted into a cell: %q", b.cont[2][0])
+	}
+	press(t, "u")
+	tableRegister, lineRegister = nil, nil
+	press(t, "p")
+	if statusMessage != "Nothing to paste" || dirty() {
+		t.Errorf("empty register: %q", statusMessage)
+	}
+	if got := keys.keysFor(actPaste); got != "p, P" {
+		t.Errorf("paste keys = %q", got)
+	}
+}
