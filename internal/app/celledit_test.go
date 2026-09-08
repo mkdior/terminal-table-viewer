@@ -169,4 +169,55 @@ func TestCellEditorDrawsOverTheCell(t *testing.T) {
 	if b.cont[2][1] != "b2xyz" || cellEdit != nil {
 		t.Errorf("applied %q", b.cont[2][1])
 	}
+
+	// A combining mark is drawn together with its base character.
+	b.cont[3][1] = "e\u0301x"
+	bufferTable.Select(3, 1)
+	press(t, "E")
+	mainView.Draw(screen)
+	screen.Show()
+	cells, w, _ = screen.GetContents()
+	found := false
+	for _, cell := range cells {
+		if len(cell.Runes) == 2 && cell.Runes[0] == 'e' && cell.Runes[1] == 0x0301 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the accent must be drawn as a combining rune on its base")
+	}
+	_ = w
+	press(t, "esc")
+}
+
+func TestCtrlCInEditorAndQuitFocus(t *testing.T) {
+	setupWriteTable(t, "a,b\n1,2\n3,4\n")
+	t.Cleanup(func() { cellEdit = nil })
+	ctrlC := tcell.NewEventKey(tcell.KeyCtrlC, 0, tcell.ModCtrl)
+	press(t, "i d r a f t")
+	if cellEdit == nil || cellEdit.ed.mode != editInsert {
+		t.Fatal("editor should be open in insert mode")
+	}
+	if ev := handleAppKey(ctrlC); ev != nil || cellEdit == nil || cellEdit.ed.mode != editNormal {
+		t.Error("Ctrl-C in insert mode must act as Esc, not quit")
+	}
+	if ev := handleAppKey(ctrlC); ev != nil || cellEdit != nil || dirty() {
+		t.Error("Ctrl-C in normal mode must cancel the editor, not quit")
+	}
+	if ev := handleAppKey(tcell.NewEventKey(tcell.KeyRune, 'x', tcell.ModNone)); ev == nil {
+		t.Error("other keys pass through the application capture")
+	}
+	// With pending edits Ctrl-C opens the quit dialog; Cancel returns the
+	// focus to whatever had it.
+	press(t, "d d")
+	form := tview.NewForm()
+	app.SetFocus(form)
+	if ev := handleAppKey(ctrlC); ev != nil || !UI.HasPage("quitDialog") {
+		t.Fatal("Ctrl-C with pending edits must prompt")
+	}
+	_, front := UI.GetFrontPage()
+	front.InputHandler()(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone), func(tview.Primitive) {})
+	if UI.HasPage("quitDialog") || app.GetFocus() != form {
+		t.Errorf("Esc must close the dialog and restore the focus: page=%v focus=%T", UI.HasPage("quitDialog"), app.GetFocus())
+	}
 }

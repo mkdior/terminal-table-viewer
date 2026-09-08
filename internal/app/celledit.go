@@ -72,15 +72,34 @@ func showEditStatus() {
 	drawFooterText(fileNameStr, columnTitle(cellEdit.col)+"  "+mode, cursorPosStr)
 }
 
-// runeWidth is the number of terminal cells a rune occupies.
-func runeWidth(r rune) int {
-	return uniseg.StringWidth(string(r))
+// grapheme is one user-perceived character of the text being edited: the
+// runes it spans (a base plus its combining marks, or an emoji sequence) and
+// the terminal cells it occupies.
+type grapheme struct {
+	start, end int // rune indexes [start, end)
+	runes      []rune
+	width      int
+}
+
+// graphemes splits text into user-perceived characters so combining marks
+// are drawn with their base and emoji sequences are measured as one unit.
+func graphemes(text []rune) []grapheme {
+	var out []grapheme
+	gr := uniseg.NewGraphemes(string(text))
+	pos := 0
+	for gr.Next() {
+		rs := gr.Runes()
+		out = append(out, grapheme{pos, pos + len(rs), rs, gr.Width()})
+		pos += len(rs)
+	}
+	return out
 }
 
 // draw paints the editor over its cell: the text on the panel background,
 // scrolled so the cursor is visible, the cursor as a reverse block in normal
 // and visual mode and as the terminal cursor while inserting, and the visual
-// selection on the selection background.
+// selection on the selection background. The cursor moves by rune; a cursor
+// inside a multi-rune grapheme highlights the whole grapheme.
 func (c *cellEditor) draw(screen tcell.Screen) {
 	tx, ty, tw, _ := bufferTable.GetInnerRect()
 	x, y, w := tx, ty+b.rowFreeze, 10
@@ -96,20 +115,21 @@ func (c *cellEditor) draw(screen tcell.Screen) {
 		return
 	}
 	ed := c.ed
-	widths := make([]int, len(ed.text))
-	total := 0
-	for i, r := range ed.text {
-		widths[i] = runeWidth(r)
-		total += widths[i]
+	gs := graphemes(ed.text)
+	total, curX, curW := 0, -1, 1
+	for _, g := range gs {
+		if curX < 0 && ed.cur >= g.start && ed.cur < g.end {
+			curX, curW = total, max(g.width, 1)
+		}
+		total += g.width
+	}
+	if curX < 0 {
+		curX = total // after the last character
 	}
 	w = clampInt(max(w, total+1), 1, avail)
-	curX := 0
-	for i := 0; i < ed.cur && i < len(widths); i++ {
-		curX += widths[i]
-	}
 	off := 0
-	if curX >= w {
-		off = curX - w + 1
+	if curX+curW > w {
+		off = curX + curW - w
 	}
 	base := tcell.StyleDefault.Background(theme.Panel).Foreground(theme.Text)
 	for i := 0; i < w; i++ {
@@ -120,20 +140,19 @@ func (c *cellEditor) draw(screen tcell.Screen) {
 		lo, hi = min(ed.anchor, ed.cur), max(ed.anchor, ed.cur)
 	}
 	typing := ed.mode == editInsert || ed.mode == editReplace
-	col := 0
-	for i, r := range ed.text {
-		rw := widths[i]
-		if rw > 0 && col-off >= 0 && col-off+rw <= w {
+	pos := 0
+	for _, g := range gs {
+		if g.width > 0 && pos-off >= 0 && pos-off+g.width <= w {
 			st := base
-			if i >= lo && i <= hi {
+			if g.start <= hi && g.end-1 >= lo {
 				st = st.Background(theme.Selection)
 			}
-			if i == ed.cur && !typing {
+			if !typing && ed.cur >= g.start && ed.cur < g.end {
 				st = st.Reverse(true)
 			}
-			screen.SetContent(x+col-off, y, r, nil, st)
+			screen.SetContent(x+pos-off, y, g.runes[0], g.runes[1:], st)
 		}
-		col += rw
+		pos += g.width
 	}
 	cx := x + curX - off
 	if ed.cur >= len(ed.text) && !typing && cx < x+w {

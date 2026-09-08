@@ -105,6 +105,13 @@ func TestLineEditorVimCommands(t *testing.T) {
 		{"abcd", "v l r x", "xxcd", 1},
 		{"abc def", "y i w w v e p", "abc abc", 6},
 		{"abc", "v esc x", "bc", 0},
+		// review fixes
+		{"abc", "d r x", "bc", 0}, // dr is not a vim command: the operator is dropped and x runs alone
+		{"abc", "c r x", "bc", 0},
+		{"one two three", "d 2 i w", "two three", 0},
+		{"one two three", "2 d a w", "three", 0},
+		{"abcdef", "x 3 .", "ef", 0},                   // a count on . repeats the change
+		{"abc", "9 9 9 9 9 9 9 9 9 9 9 9 l", "abc", 2}, // counts saturate instead of wrapping
 	}
 	for _, tc := range cases {
 		lineRegister, lineLastChange = nil, nil
@@ -177,13 +184,47 @@ func TestLineEditorModesAndClosing(t *testing.T) {
 	if got := string(e3.text); got != "bac" || e3.cur != 1 { // the replayed x deletes "a" into the register, as in vim
 		t.Errorf(". must carry over: %q cur %d", got, e3.cur)
 	}
+	// Enter applies an insert and still records it for . in the next cell.
+	lineRegister, lineLastChange = nil, nil
+	e = newLineEditor("abc")
+	feedKeys(t, e, "i X enter")
+	if !e.done || !e.applied || string(e.text) != "Xabc" {
+		t.Fatalf("i X enter: %q", e.text)
+	}
+	e2 = newLineEditor("zz")
+	feedKeys(t, e2, ".")
+	if got := string(e2.text); got != "Xzz" {
+		t.Errorf(". must repeat an insert that was applied with Enter: %q", got)
+	}
+	e = newLineEditor("abc")
+	feedKeys(t, e, "c c n e w enter")
+	e2 = newLineEditor("old")
+	feedKeys(t, e2, ".")
+	if got := string(e2.text); got != "new" {
+		t.Errorf(". must repeat cc applied with Enter: %q", got)
+	}
+	// Visual p is one change: one u brings the selection back.
+	lineRegister = []rune("X")
+	e = newLineEditor("abc")
+	feedKeys(t, e, "v l p")
+	if string(e.text) != "Xc" {
+		t.Fatalf("visual p: %q", e.text)
+	}
+	feedKeys(t, e, "u")
+	if string(e.text) != "abc" {
+		t.Errorf("one undo must restore the replaced selection: %q", e.text)
+	}
+	feedKeys(t, e, "0 v l 2 p")
+	if string(e.text) != "XXc" {
+		t.Errorf("counted visual p: %q", e.text)
+	}
 	if got, _ := findChar([]rune("abc"), 0, 'f', 'z', 1, false); got != 0 {
 		t.Error("findChar miss")
 	}
-	if lo, hi, ok := textObject([]rune("abc"), 0, '(', false); ok || lo != 0 || hi != 0 {
+	if lo, hi, ok := textObject([]rune("abc"), 0, '(', false, 1); ok || lo != 0 || hi != 0 {
 		t.Error("no bracket pair must fail")
 	}
-	if _, _, ok := textObject(nil, 0, 'w', false); ok {
+	if _, _, ok := textObject(nil, 0, 'w', false, 1); ok {
 		t.Error("empty text has no objects")
 	}
 }

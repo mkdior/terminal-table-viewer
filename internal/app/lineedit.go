@@ -157,13 +157,21 @@ func (e *lineEditor) cancelPending() {
 func (e *lineEditor) takeCount() (raw, n int) {
 	raw, n = e.count, max(e.count, 1)
 	if e.opCount > 0 {
-		n *= e.opCount
+		n = saturatingMul(n, e.opCount)
 		if raw > 0 {
-			raw *= e.opCount
+			raw = saturatingMul(raw, e.opCount)
 		}
 	}
 	e.count = 0
 	return raw, n
+}
+
+// pushDigit folds a typed digit into a count without exceeding the count cap.
+func pushDigit(count int, r rune) int {
+	if d := int(r - '0'); count <= (maxCountPrefix-d)/10 {
+		return count*10 + d
+	}
+	return maxCountPrefix
 }
 
 // normalKey handles a key in normal mode.
@@ -206,7 +214,7 @@ func (e *lineEditor) normalKey(k editKey) {
 		return
 	}
 	if r >= '1' && r <= '9' || (r == '0' && e.count > 0) {
-		e.count = e.count*10 + int(r-'0')
+		e.count = pushDigit(e.count, r)
 		return
 	}
 	if e.op != 0 {
@@ -252,7 +260,9 @@ func (e *lineEditor) normalKey(k editKey) {
 		e.restore(&e.undo, &e.redo)
 		e.finishCommand()
 	case '.':
-		e.repeatLastChange()
+		for i := 0; i < n; i++ {
+			e.repeatLastChange()
+		}
 	case 'i':
 		e.startInsert(e.cur)
 	case 'a':
@@ -283,10 +293,7 @@ func (e *lineEditor) operatorKey(r rune) {
 	case e.op:
 		e.opRange(0, len(e.text))
 		return
-	case 'i', 'a':
-		e.pending = r
-		return
-	case 'r', 'f', 'F', 't', 'T', 'g':
+	case 'i', 'a', 'f', 'F', 't', 'T', 'g':
 		e.pending = r
 		return
 	}
@@ -362,6 +369,14 @@ func (e *lineEditor) paste(after bool, n int) {
 	e.cur, e.cmdChanged = at+len(ins)-1, true
 }
 
+// replaceRange swaps text[lo:hi) for ins as one change (visual p); the
+// register is left as it was.
+func (e *lineEditor) replaceRange(lo, hi int, ins []rune) {
+	e.snapshot()
+	e.text = append(e.text[:lo], append(ins, e.text[hi:]...)...)
+	e.cur, e.cmdChanged = lo+len(ins)-1, true
+}
+
 // repeatLastChange replays the keys of the last change (.).
 func (e *lineEditor) repeatLastChange() {
 	keys := lineLastChange
@@ -410,7 +425,8 @@ func (e *lineEditor) pendingChar(r rune) {
 		e.cur = target
 		e.finishCommand()
 	case 'i', 'a':
-		lo, hi, ok := textObject(e.text, e.cur, r, p == 'a')
+		_, n := e.takeCount()
+		lo, hi, ok := textObject(e.text, e.cur, r, p == 'a', n)
 		if !ok {
 			e.cancelPending()
 			return
@@ -599,7 +615,7 @@ func (e *lineEditor) visualKey(k editKey) {
 		return
 	}
 	if r >= '1' && r <= '9' || (r == '0' && e.count > 0) {
-		e.count = e.count*10 + int(r-'0')
+		e.count = pushDigit(e.count, r)
 		return
 	}
 	lo, hi := min(e.anchor, e.cur), max(e.anchor, e.cur)+1
@@ -628,11 +644,12 @@ func (e *lineEditor) visualKey(k editKey) {
 		e.mode, e.cur = editNormal, lo
 		e.finishCommand()
 	case 'p', 'P':
-		reg := lineRegister
+		var ins []rune
+		for i := 0; i < n; i++ {
+			ins = append(ins, lineRegister...)
+		}
 		e.mode = editNormal
-		e.deleteRange(lo, hi, false)
-		lineRegister = reg
-		e.paste(false, 1)
+		e.replaceRange(lo, hi, ins)
 		e.finishCommand()
 	case '~', 'u', 'U':
 		e.snapshot()
@@ -659,6 +676,12 @@ func (e *lineEditor) visualKey(k editKey) {
 func (e *lineEditor) insertKey(k editKey) {
 	switch k.key {
 	case tcell.KeyEnter:
+		// Applying ends the insert the way Esc would, so . can repeat it.
+		if n := len(e.cmdKeys); n > 0 {
+			e.cmdKeys[n-1] = editKey{key: tcell.KeyEscape}
+		}
+		e.mode = editNormal
+		e.finishCommand()
 		e.done, e.applied = true, true
 	case tcell.KeyEscape:
 		e.mode = editNormal
@@ -798,14 +821,14 @@ func toggleCase(r rune) rune {
 }
 
 // textObject returns text[lo:hi) for a text object at cur: w and W (a word,
-// around includes the trailing or else leading blanks), a quote (" ' `) or a
-// bracket pair (( ) b, [ ], { } B, < >), inner or around the delimiters.
-func textObject(text []rune, cur int, obj rune, around bool) (lo, hi int, ok bool) {
-	n := len(text)
-	if n == 0 {
+// around includes the trailing or else leading blanks; a count takes that
+// many words and the blanks between them), a quote (" ' `) or a bracket pair
+// (( ) b, [ ], { } B, < >), inner or around the delimiters.
+func textObject(text []rune, cur int, obj rune, around bool, n int) (lo, hi int, ok bool) {
+	if len(text) == 0 {
 		return 0, 0, false
 	}
-	cur = clampInt(cur, 0, n-1)
+	cur = clampInt(cur, 0, len(text)-1)
 	switch obj {
 	case 'w', 'W':
 		big := obj == 'W'
@@ -814,12 +837,12 @@ func textObject(text []rune, cur int, obj rune, around bool) (lo, hi int, ok boo
 		for lo > 0 && runeClass(text[lo-1], big) == c {
 			lo--
 		}
-		for hi < n && runeClass(text[hi], big) == c {
+		for hi < len(text) && runeClass(text[hi], big) == c {
 			hi++
 		}
 		if around && c != 0 {
 			trailing := hi
-			for trailing < n && runeClass(text[trailing], big) == 0 {
+			for trailing < len(text) && runeClass(text[trailing], big) == 0 {
 				trailing++
 			}
 			if trailing > hi {
@@ -827,6 +850,17 @@ func textObject(text []rune, cur int, obj rune, around bool) (lo, hi int, ok boo
 			} else {
 				for lo > 0 && runeClass(text[lo-1], big) == 0 {
 					lo--
+				}
+			}
+		}
+		for extra := n - 1; extra > 0 && hi < len(text); extra-- {
+			next := runeClass(text[hi], big)
+			for hi < len(text) && runeClass(text[hi], big) == next {
+				hi++
+			}
+			if around && next != 0 {
+				for hi < len(text) && runeClass(text[hi], big) == 0 {
+					hi++
 				}
 			}
 		}
@@ -880,7 +914,7 @@ func textObject(text []rune, cur int, obj rune, around bool) (lo, hi int, ok boo
 		return 0, 0, false
 	}
 	depth := 0
-	for i := start + 1; i < n; i++ {
+	for i := start + 1; i < len(text); i++ {
 		switch text[i] {
 		case open:
 			depth++
