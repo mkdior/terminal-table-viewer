@@ -48,6 +48,11 @@ controls.
 - **Vim keybindings**: h/j/k/l, gg/G, 0/$, Ctrl-d/Ctrl-u, count prefixes
   such as `5j` or `12G`, visual mode over cells, and `y`/`Y` to copy cells or
   rows to the clipboard; every key is remappable in a config file
+- **Editing**: changes are staged like in fdisk and written with `W`; `dd`
+  and `d` with a motion remove rows or columns, visual `d` removes the
+  selection, `x` clears cells, `X` cuts to the clipboard, `E` opens a vim
+  line editor on the cell, `u` undoes; every write keeps a backup of the
+  previous version
 - **Mouse support**: click to select, scroll to move, click buttons in dialogs
 - **Pipe support**: reads from stdin for use in shell pipelines
 
@@ -256,18 +261,34 @@ N: previous search result
 Esc: clear search highlighting, or close the open dialog
 f: filter by the current column
 r: remove the filter on the current column
-s: sort ascending by the current column
+s: sort ascending by the current column (an edit: `u` undoes it)
 S: sort descending by the current column
 t: toggle the column type (String, Number, Date)
-W: toggle the width limit on the current column
+_: toggle the width limit on the current column
 y: copy the current cell to the clipboard
 Y: copy the current row to the clipboard, cells separated by tabs
 v, Ctrl-v: visual mode; select a block of cells from here to the cursor
 V: visual line mode; select whole rows
 o: in visual mode, swap the anchor and the cursor
-i: statistics for the current column
+I: statistics for the current column
 ?: help
-q: quit
+q: quit; asks whether to write or discard pending edits
+
+### Editing
+
+dd: remove the current row; `3dd` removes three
+d + motion: remove the rows a vertical motion spans (`dj`, `d3j`, `dG`,
+    `dgg`) or the columns a horizontal one spans (`dl`, `dh`, `d$`, `d0`)
+d in visual mode: remove the selected rows (`V`) or columns (`v`)
+x: clear the cell; with a count, N cells to the right; in visual mode
+    every selected cell
+X: remove and copy to the clipboard: the current row, or the visual
+    selection
+E: edit the cell in a vim line editor (see [Editing](#editing-1))
+i, a: edit the cell, inserting at the start or appending at the end
+cc: clear the cell and type its new value
+u: undo the last edit; with a count, N edits
+W: write the table back to the file
 
 ### Mouse
 
@@ -409,10 +430,64 @@ visual mode (`Y` copies the whole rows of a block selection), `Esc`, `q` or
 pressing the same key again cancels without quitting, and any other command
 leaves visual mode before running.
 
+### Editing
+
+Editing works like fdisk: every change is staged in memory and the file is
+only touched when you press `W`. The footer marks the file `[+]` while edits
+are pending and sums them up after each one ("1 column (Age) and 3 rows
+removed, 2 cells changed, sorted by Age ascending"). `u` undoes edits one at
+a time, structural ones included, and `q` (or Ctrl-C) asks whether to write,
+discard or stay while edits are pending.
+
+Rows and columns: `d` is vim's operator. `dd` removes the current row;
+    `dj`, `d3j`, `dG` and `dgg` remove the rows a vertical motion spans;
+    `dl`, `dh`, `d$` and `d0` remove the columns a horizontal one spans, with
+    vim's rules (no wrap-around, `dh` in the first column does nothing).
+    In visual mode `d` removes the selected rows (`V`) or columns (`v`).
+    Counts multiply: `2d3j` removes six rows. The last row and the last
+    column cannot be removed.
+Cut: `X` copies before it removes (the current row, or the visual selection;
+    whole columns are copied with every row of the table) and leaves the
+    table alone if no clipboard channel accepted the text.
+Cells: `x` clears the cell under the cursor (`3x` three cells; in visual mode
+    every selected cell). `E` opens the cell in a line editor that behaves
+    like a vim line: `h l 0 ^ $ | w b e W B E f F t T ; ,` motions with
+    counts; `d c y` with motions or text objects (`iw aw iW aW`, `i"`, `a'`,
+    `i(`, `a[`, `i{`, `i<`); `dd cc yy D C Y`; `x X s S r ~ p P`; `u` and
+    `Ctrl-r`; `.` to repeat the last change; `v` for a charwise selection
+    with `o d c y x ~ u U r p`; `R` to replace; `i a I A` to insert. In
+    insert mode Backspace, Delete, the arrows, Home, End, Ctrl-w and Ctrl-u
+    work as usual. Enter applies the value; Esc in normal mode cancels, as on
+    vim's command line. `i` and `a` open the cell straight in insert mode,
+    `cc` clears it first. The register and `.` carry over from cell to cell.
+Filters: an edit made in a filtered view changes the unfiltered table too. A
+    removed column takes its filter and width limit with it, and `u` brings
+    them back. Sorting is an edit as well: it applies to the whole table, is
+    written by `W`, and `u` restores the previous order.
+Writing: `W` replaces the file atomically (a temporary file next to it,
+    renamed into place, permissions kept; symlinks are followed; `.gz` files
+    stay gzip). Fields are quoted only when they contain the separator, a
+    quote or a line break, so TSV and pipe files keep their look; blank lines
+    dropped on load are not written back, and line endings become LF. `W` is
+    refused when the table is not the whole file: input from a pipe,
+    `--lines`, `--skip-lines`, `--skip-prefix`, `--columns` or
+    `--hide-columns`, a load that stopped early, or ragged rows padded with
+    NaN (load with `--strict` to reject them); and when the file changed on
+    disk since it was loaded, is read-only, or has other hard links.
+Backups: before the file is replaced, a private copy of its previous version
+    goes to the backup directory (see [backup] under
+    [Configuration](#configuration)), so a bad edit can be recovered by
+    hand. The footer names the copy after each write.
+
+Deliberate deviations from vim in the table: `x` clears content instead of
+being `dl` (as in sc-im, the vim spreadsheet), `X` cuts to the clipboard, `W`
+writes and `I` shows statistics. The line editor's keys are vim's and are not
+remappable; the table keys are.
+
 ### Column width limits
 
 Columns whose cells exceed 50 characters in the first 100 rows are limited to
-50 characters automatically; longer cells are cut with an ellipsis. Press `W`
+50 characters automatically; longer cells are cut with an ellipsis. Press `_`
 on any column to toggle its limit. Cells are never wrapped onto several lines.
 
 While the cursor is on a cut cell, a floating box shows the full value,
@@ -475,7 +550,8 @@ Actions: `move_left`, `move_right`, `move_down`, `move_up`, `next_column`,
     `next_match`, `prev_match`,
     `cancel`, `filter`, `remove_filter`, `sort_asc`, `sort_desc`,
     `toggle_type`, `yank`, `yank_row`, `visual`, `visual_row`,
-    `visual_swap`, `toggle_width`, `stats`, `help`, `quit`
+    `visual_swap`, `delete`, `cut`, `clear`, `edit`, `insert`, `append`,
+    `change`, `undo`, `write`, `toggle_width`, `stats`, `help`, `quit`
 
 ```toml
 [keys]
@@ -522,6 +598,28 @@ osc52: `true` (default) or `false`; whether to also send the OSC 52 escape
 [clipboard]
 command = "wl-copy --primary"
 osc52   = false
+```
+
+### [backup]
+
+Before `W` replaces a file, a copy of its previous version is made in the
+backup directory as `<name>.<path hash>.<timestamp>`: created private (file
+0600, directory 0700), fsynced before the file is replaced, and named after
+the real file with a short hash of its full path so same-named files in
+different directories do not mix. The oldest copies of a file are pruned
+beyond `keep`.
+
+enabled: keep a backup on every write; default `true`
+dir: the directory; empty means `$XDG_STATE_HOME/ttv/backup`
+    (`~/.local/state/ttv/backup`; the local application data directory on
+    Windows). `~` is expanded and relative paths are resolved at startup.
+keep: how many backups of one file to keep; default 20, `0` keeps them all
+
+```toml
+[backup]
+enabled = true
+dir     = "~/backups/ttv"
+keep    = 10
 ```
 
 ## Large Files
