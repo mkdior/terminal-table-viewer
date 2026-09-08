@@ -45,7 +45,9 @@ type BackupConfig struct {
 
 // PreviewConfig controls the full-value box shown for cut cells.
 type PreviewConfig struct {
-	Position string `toml:"position"` // cursor (default), top or bottom
+	Position   string `toml:"position"`    // bottom (default), top or cursor
+	SplitItems *bool  `toml:"split_items"` // show a list value one item per line (default true)
+	Separator  string `toml:"separator"`   // what separates the items; empty means ";"
 }
 
 // ClipboardConfig overrides how yanked text reaches the clipboard.
@@ -177,6 +179,11 @@ func applyConfig(cfg Config, themeFlag string) error {
 		return fmt.Errorf("config: preview: %w", err)
 	}
 	previewPos = pos
+	previewSplitItems = cfg.Preview.SplitItems == nil || *cfg.Preview.SplitItems
+	previewSeparator = defaultPreviewSeparator
+	if cfg.Preview.Separator != "" {
+		previewSeparator = cfg.Preview.Separator
+	}
 	backupEnabled = cfg.Backup.Enabled == nil || *cfg.Backup.Enabled
 	backupDirOverride = ""
 	if dir := strings.TrimSpace(cfg.Backup.Dir); dir != "" {
@@ -273,9 +280,13 @@ func dumpConfig(w io.Writer) error {
 	sb.WriteString("osc52   = true\n")
 	sb.WriteString("\n# Preview: where the box with the full value of a cut cell appears: \"bottom\" and\n")
 	sb.WriteString("# \"top\" centre it at the bottom of the table or under the header, \"cursor\" lays it\n")
-	sb.WriteString("# over the selected cell.\n\n")
+	sb.WriteString("# over the selected cell. A value that lists several items separated by separator\n")
+	sb.WriteString("# is shown one item per line (split_items = true) or as the cell has it, as one\n")
+	sb.WriteString("# wrapped run of text (false); a list too long for the box falls back to that.\n\n")
 	sb.WriteString("[preview]\n")
-	sb.WriteString("position = \"bottom\"\n")
+	sb.WriteString("position    = \"bottom\"\n")
+	sb.WriteString("split_items = true\n")
+	fmt.Fprintf(&sb, "separator   = %q\n", defaultPreviewSeparator)
 	sb.WriteString("\n# Backup: before W replaces a file, a private copy of the previous version is\n")
 	sb.WriteString("# made in dir as <name>.<path hash>.<timestamp>. Empty dir means\n")
 	sb.WriteString("# $XDG_STATE_HOME/ttv/backup (~/.local/state/ttv/backup); ~ is expanded.\n")

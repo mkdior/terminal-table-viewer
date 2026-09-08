@@ -188,3 +188,26 @@ func TestParseColor(t *testing.T) {
 		t.Error("palette colours should dump as colour<n>")
 	}
 }
+
+func TestApplyConfigPreviewList(t *testing.T) {
+	resetKeysAndTheme(t)
+	oldSplit, oldSep := previewSplitItems, previewSeparator
+	t.Cleanup(func() { previewSplitItems, previewSeparator = oldSplit, oldSep })
+
+	var cfg Config
+	if _, err := toml.Decode("[preview]\nsplit_items = false\nseparator = \"|\"\n", &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyConfig(cfg, ""); err != nil {
+		t.Fatal(err)
+	}
+	if previewSplitItems || previewSeparator != "|" {
+		t.Errorf("split=%v sep=%q after config", previewSplitItems, previewSeparator)
+	}
+	if err := applyConfig(Config{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !previewSplitItems || previewSeparator != ";" {
+		t.Errorf("defaults: split=%v sep=%q; want one item per line, split on \";\"", previewSplitItems, previewSeparator)
+	}
+}

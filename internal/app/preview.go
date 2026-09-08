@@ -30,6 +30,36 @@ const (
 // previewPos is the active placement; the [preview] config section sets it.
 var previewPos = previewBottom
 
+// defaultPreviewSeparator is what separates the items of a list value.
+const defaultPreviewSeparator = ";"
+
+// List values in the preview box: a cell such as "red; green; blue" is shown
+// one item per line rather than as one wrapped run of text. The [preview]
+// config section sets both.
+var (
+	previewSplitItems = true
+	previewSeparator  = defaultPreviewSeparator
+)
+
+// previewLines wraps text to innerW cells for the box. A value that lists
+// several items is laid out one item per line, each item wrapped on its own,
+// when that fits in maxLines; otherwise, and for any other value, the text is
+// word-wrapped as it is.
+func previewLines(text string, innerW, maxLines int) []string {
+	if previewSplitItems && previewSeparator != "" && strings.Contains(text, previewSeparator) {
+		var lines []string
+		for _, item := range strings.Split(text, previewSeparator) {
+			if item = strings.TrimSpace(item); item != "" {
+				lines = append(lines, tview.WordWrap(item, innerW)...)
+			}
+		}
+		if len(lines) > 0 && len(lines) <= maxLines {
+			return lines
+		}
+	}
+	return tview.WordWrap(text, innerW)
+}
+
 // parsePreviewPosition reads the config spelling of a placement.
 func parsePreviewPosition(s string) (previewPosition, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
@@ -155,7 +185,7 @@ func previewLayout(text string, availW, availH int) (lines []string, width, heig
 	if innerW < 10 || maxLines < 1 {
 		return nil, 0, 0, false
 	}
-	lines = tview.WordWrap(text, innerW)
+	lines = previewLines(text, innerW, maxLines)
 	if len(lines) > maxLines {
 		return nil, 0, 0, false
 	}

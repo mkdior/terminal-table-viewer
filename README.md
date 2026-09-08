@@ -554,6 +554,12 @@ text starts (or its last line ending there when there is no room below).
 Values longer than 1000 characters, or too tall to fit in half the table, are
 not previewed.
 
+A value that lists several items, `red; green; blue`, is shown one item per
+line so the list can be read at a glance; `split_items = false` shows it as
+the cell has it, in one wrapped run of text, and `separator` changes what
+splits the items (`;` by default). A list with more items than the box can
+hold falls back to the wrapped text.
+
 ## Advanced Examples
 
 ### Bioinformatics formats
@@ -670,10 +676,15 @@ wrap_columns = true
 - `position`: `bottom` (default) and `top` centre the full-value box at the
   bottom of the table or under the header; `cursor` lays it over the
   selected cell.
+- `split_items`: `true` (default) shows a value that lists several items one
+  item per line; `false` shows it as one wrapped run of text.
+- `separator`: what separates the items; `;` by default.
 
 ```toml
 [preview]
-position = "cursor"
+position    = "cursor"
+split_items = true
+separator   = "|"
 ```
 
 ### [clipboard]

@@ -31,6 +31,40 @@ func TestPreviewLayout(t *testing.T) {
 	}
 }
 
+func TestPreviewListsOneItemPerLine(t *testing.T) {
+	oldSplit, oldSep := previewSplitItems, previewSeparator
+	t.Cleanup(func() { previewSplitItems, previewSeparator = oldSplit, oldSep })
+	previewSplitItems, previewSeparator = true, ";"
+
+	lines, w, h, ok := previewLayout("alpha; beta;gamma;", 80, 24)
+	if !ok || strings.Join(lines, "|") != "alpha|beta|gamma" || w != len("alpha")+4 || h != 3+2 {
+		t.Errorf("list value: lines=%q w=%d h=%d ok=%v", lines, w, h, ok)
+	}
+	if lines, _, _, ok := previewLayout("no separator here", 80, 24); !ok || len(lines) != 1 {
+		t.Errorf("a plain value must stay one line, got %q", lines)
+	}
+	// An item longer than the box wraps on its own; the next item starts a new line.
+	lines, _, _, ok = previewLayout(strings.Repeat("word ", 10)+"; tail", 30, 24)
+	if !ok || lines[len(lines)-1] != "tail" || len(lines) < 3 {
+		t.Errorf("long item must wrap before the next item, got %q", lines)
+	}
+	// A list too long for the box falls back to the wrapped sentence.
+	many := strings.TrimSuffix(strings.Repeat("item;", 20), ";")
+	lines, _, _, ok = previewLayout(many, 80, 24) // 10 lines fit: 24/2 - 2
+	if !ok || len(lines) != 2 {
+		t.Errorf("an overlong list must be shown as wrapped text, got %d lines ok=%v: %q", len(lines), ok, lines)
+	}
+
+	previewSeparator = "|"
+	if lines, _, _, ok := previewLayout("a|b|c", 80, 24); !ok || len(lines) != 3 {
+		t.Errorf("the separator is configurable, got %q", lines)
+	}
+	previewSplitItems = false
+	if lines, _, _, ok := previewLayout("a|b|c", 80, 24); !ok || len(lines) != 1 || lines[0] != "a|b|c" {
+		t.Errorf("with split_items off the value is shown as it is, got %q", lines)
+	}
+}
+
 func TestTruncatedCellTextUsesDisplayWidth(t *testing.T) {
 	wide := strings.Repeat("日", 30) // 30 runes, 60 cells
 	buf, _ := createNewBufferWithData([][]string{{"h"}, {wide}}, true)
