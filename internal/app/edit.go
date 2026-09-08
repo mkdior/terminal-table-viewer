@@ -275,12 +275,11 @@ func deleteRows(r1, r2 int, toClipboard bool) {
 	block := b.cellBlock(r1, 0, r2, b.colLen-1)
 	did := "Removed " + plural(n, "row")
 	if toClipboard {
-		// The rows leave the table only once the clipboard has accepted them.
-		channels, ok := cutToClipboard(tsv(block))
-		if !ok {
+		// The rows leave the table only when a clipboard channel can take them.
+		var ok bool
+		if did, ok = cutToClipboard(tsv(block), "Cut "+plural(n, "row")); !ok {
 			return
 		}
-		did = "Cut " + plural(n, "row") + " to " + channels
 	}
 	setRegister(block)
 	removed := baseBuffer().removeRows(b.cont[r1 : r2+1])
@@ -311,11 +310,11 @@ func deleteColumns(c1, c2 int, toClipboard bool) {
 	if toClipboard {
 		// Whole columns are removed, so whole columns are copied: every row of
 		// the unfiltered table, header included.
-		channels, ok := cutToClipboard(tsv(base.cellBlock(0, c1, base.rowLen-1, c2)))
-		if !ok {
+		var ok bool
+		text := tsv(base.cellBlock(0, c1, base.rowLen-1, c2))
+		if did, ok = cutToClipboard(text, "Cut "+plural(k, "column")+" ("+strings.Join(names, ", ")+")"); !ok {
 			return
 		}
-		did = "Cut " + plural(k, "column") + " (" + strings.Join(names, ", ") + ") to " + channels
 	}
 	setRegister(base.cellBlock(base.rowFreeze, c1, base.rowLen-1, c2)) // the data cells, for p
 	e := edit{colAt: c1, cols: base.removeColumns(c1, c2), names: names}
@@ -550,16 +549,34 @@ func rowIndex(buf *Buffer, row []string) int {
 	return -1
 }
 
-// cutToClipboard copies the text of a cut and reports the channels used; when
-// no channel accepted it the footer says so and ok is false, so the caller
-// leaves the table unchanged.
-func cutToClipboard(text string) (channels string, ok bool) {
-	channels, err := copyToClipboard(text)
+// cutToClipboard copies the text of a cut. When no clipboard channel can take
+// it at all the footer says so and ok is false, so the caller leaves the table
+// unchanged. Otherwise did is the status to show now: what took the text, or
+// the tool still running, in which case the footer is redrawn with the outcome
+// when it is done (the register holds the cut either way, so p and u still
+// have it).
+func cutToClipboard(text, what string) (did string, ok bool) {
+	var later bool // the report comes after this call returned
+	pending, err := copyToClipboard(text, func(channels string, err error) {
+		switch {
+		case err != nil:
+			did = what + "; clipboard failed: " + err.Error()
+		default:
+			did = what + " to " + channels
+		}
+		if later {
+			editStatus(did)
+		}
+	})
 	if err != nil {
 		drawFooterText(fileNameStr, "Not cut, clipboard failed: "+err.Error(), cursorPosStr)
 		return "", false
 	}
-	return channels, true
+	if pending != "" {
+		later = true
+		return what + "; " + pending + " running", true
+	}
+	return did, true
 }
 
 // sortTable sorts the unfiltered table by column using its detected type and

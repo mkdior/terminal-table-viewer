@@ -2,18 +2,31 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
 
 // maxYankBytes caps what a single yank will send to the clipboard.
 const maxYankBytes = 50 << 20
+
+// clipToolTimeout bounds one run of the clipboard tool. A tool that never
+// finishes (an interop relay that does not pass EOF on, a display that is
+// gone) must not keep a yank open forever; a variable so tests can shorten it.
+var clipToolTimeout = 10 * time.Second
+
+// clipWaitDelay is how long to wait for the tool's pipes after it has exited:
+// xclip and wl-copy fork a child that serves the selection and keeps stderr
+// open, and without a bound the run would last until the clipboard changes
+// hands.
+const clipWaitDelay = time.Second
 
 // maxOSC52Bytes caps the payload sent with the OSC 52 escape; terminals and
 // tmux drop very large sequences, so bigger yanks rely on a clipboard tool.
@@ -99,10 +112,11 @@ func detectWSL() bool {
 	return err == nil && bytes.Contains(bytes.ToLower(version), []byte("microsoft"))
 }
 
-// runClipboardTool pipes text into the tool's stdin.
-func runClipboardTool(tool clipTool, text string) error {
-	cmd := exec.Command(tool.name, tool.args...)
+// runClipboardTool pipes text into the tool's stdin, giving up when ctx ends.
+func runClipboardTool(ctx context.Context, tool clipTool, text string) error {
+	cmd := exec.CommandContext(ctx, tool.name, tool.args...)
 	cmd.Stdin = strings.NewReader(text)
+	cmd.WaitDelay = clipWaitDelay
 	if strings.HasSuffix(tool.name, ".exe") && clipIsWSL() {
 		// Windows programs cannot use a WSL path as their working directory
 		// and warn about it; start them from the Windows drive instead.
@@ -112,49 +126,107 @@ func runClipboardTool(tool clipTool, text string) error {
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("%s: %s", tool.label, msg)
+	err := cmd.Run()
+	switch {
+	case err == nil, errors.Is(err, exec.ErrWaitDelay):
+		// ErrWaitDelay: the tool exited well but a child of it kept a pipe open.
+		return nil
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return fmt.Errorf("%s: gave up after %s", tool.label, clipToolTimeout)
+	case ctx.Err() != nil:
+		return ctx.Err()
 	}
-	return nil
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("%s: %s", tool.label, msg)
+}
+
+// The tool run of the latest copy: a newer copy cancels it, and a result that
+// arrives for a superseded copy is dropped.
+var (
+	clipCancel     context.CancelFunc
+	clipGeneration int
+)
+
+// runClipboardToolAsync runs the tool for text and hands the result to done on
+// the UI goroutine. With the application running the tool runs in the
+// background, so a slow or hung child process never freezes the table, and
+// started is true; without one (tests, --debug) it runs in line and done has
+// been called on return.
+func runClipboardToolAsync(tool clipTool, text string, done func(error)) (started bool) {
+	if clipCancel != nil {
+		clipCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), clipToolTimeout)
+	clipCancel = cancel
+	clipGeneration++
+	gen := clipGeneration
+	if !uiRunning.Load() {
+		err := clipRun(ctx, tool, text)
+		cancel()
+		done(err)
+		return false
+	}
+	go func() {
+		err := clipRun(ctx, tool, text)
+		cancel()
+		if !uiRunning.Load() {
+			return
+		}
+		app.QueueUpdateDraw(func() {
+			if gen == clipGeneration {
+				done(err)
+			}
+		})
+	}()
+	return true
 }
 
 // copyToClipboard sends text to the system clipboard through every channel
 // that can reach it: the OSC 52 escape (which tmux forwards when
-// set-clipboard is on) and a clipboard tool when one is installed. It returns
-// a short description of the channels used, or an error when none applied.
-func copyToClipboard(text string) (string, error) {
+// set-clipboard is on), written at once, and a clipboard tool when one is
+// installed, run in the background (see runClipboardToolAsync). An error comes
+// back at once when no channel can take the text at all. Otherwise the
+// outcome reaches report on the UI goroutine, with the channels used or an
+// error when none applied: at once when there is no tool to wait for, else
+// when the tool has finished or been given up on, in which case pending names
+// the tool still running.
+func copyToClipboard(text string, report func(channels string, err error)) (pending string, err error) {
 	if len(text) > maxYankBytes {
 		return "", fmt.Errorf("selection is %s; the limit is %s", formatBytes(int64(len(text))), formatBytes(maxYankBytes))
 	}
-	var channels []string
-	var problems []string
-
-	if tool, ok := clipboardCommand(); ok {
-		if err := clipRun(tool, text); err != nil {
-			problems = append(problems, err.Error())
-		} else {
-			channels = append(channels, tool.label)
-		}
-	} else {
-		problems = append(problems, "no clipboard tool found (wl-copy, xclip, xsel, pbcopy, clip.exe or termux-clipboard-set)")
-	}
-	if clipboardOSC52 && screenRef != nil && len(text) <= maxOSC52Bytes {
+	osc := clipboardOSC52 && screenRef != nil && len(text) <= maxOSC52Bytes
+	if osc {
 		screenRef.SetClipboard([]byte(text))
-		if len(channels) == 0 {
-			// Unverifiable on its own: the terminal may ignore the escape.
-			return "OSC 52 only (" + strings.Join(problems, "; ") + ")", nil
+	}
+	tool, ok := clipboardCommand()
+	if !ok {
+		const problem = "no clipboard tool found (wl-copy, xclip, xsel, pbcopy, clip.exe or termux-clipboard-set)"
+		if !osc {
+			return "", errors.New(problem)
 		}
-		channels = append(channels, "OSC 52")
+		// Unverifiable on its own: the terminal may ignore the escape.
+		report("OSC 52 only ("+problem+")", nil)
+		return "", nil
 	}
-
-	if len(channels) == 0 {
-		return "", errors.New(strings.Join(problems, "; "))
+	done := func(err error) {
+		switch {
+		case err == nil && osc:
+			report(tool.label+" + OSC 52", nil)
+		case err == nil:
+			report(tool.label, nil)
+		case osc:
+			report("OSC 52 only ("+err.Error()+")", nil)
+		default:
+			report("", err)
+		}
 	}
-	return strings.Join(channels, " + "), nil
+	if runClipboardToolAsync(tool, text, done) {
+		return tool.label, nil
+	}
+	return "", nil
 }
 
 // tsv joins cells with tabs and rows with newlines; a single cell is returned as is.
@@ -172,8 +244,11 @@ func tsv(rows [][]string) string {
 	return sb.String()
 }
 
-// yankCells copies a rectangular block of b to the clipboard and reports the
-// outcome in the footer. Rows r1..r2 and columns c1..c2 are inclusive.
+// yankCells copies a rectangular block of b to the register and the clipboard
+// and reports the outcome in the footer. Rows r1..r2 and columns c1..c2 are
+// inclusive. The yank itself is done at once; while the clipboard tool is
+// still running the footer says so, then names the channels that took the
+// text.
 func yankCells(r1, c1, r2, c2 int) {
 	rows := b.cellBlock(r1, c1, r2, c2)
 	setRegister(rows)
@@ -184,10 +259,18 @@ func yankCells(r1, c1, r2, c2 int) {
 	} else if c1 == 0 && c2 == b.colLen-1 {
 		what = fmt.Sprintf("%d rows", len(rows))
 	}
-	channels, err := copyToClipboard(text)
-	if err != nil {
-		drawFooterText(fileNameStr, "Clipboard failed: "+err.Error(), cursorPosStr)
-		return
+	yanked := fmt.Sprintf("Yanked %s (%s)", what, formatBytes(int64(len(text))))
+	pending, err := copyToClipboard(text, func(channels string, err error) {
+		if err != nil {
+			drawFooterText(fileNameStr, yanked+"; clipboard failed: "+err.Error(), cursorPosStr)
+			return
+		}
+		drawFooterText(fileNameStr, yanked+" via "+channels, cursorPosStr)
+	})
+	switch {
+	case err != nil:
+		drawFooterText(fileNameStr, yanked+"; clipboard failed: "+err.Error(), cursorPosStr)
+	case pending != "":
+		drawFooterText(fileNameStr, yanked+"; "+pending+" running", cursorPosStr)
 	}
-	drawFooterText(fileNameStr, fmt.Sprintf("Yanked %s (%s) via %s", what, formatBytes(int64(len(text))), channels), cursorPosStr)
 }

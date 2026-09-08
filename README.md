@@ -383,7 +383,12 @@ straight into a spreadsheet or a shell. Yanks over 50MB are refused.
 
 TTV detects the clipboard of the system it runs on and also sends the OSC 52
 terminal escape (tmux forwards it when `set -g set-clipboard on` is set;
-payloads over 1MB skip it). The footer reports which channels were used.
+payloads over 1MB skip it). The escape goes out at once; the clipboard tool
+runs in the background, so a slow one (Windows interop from WSL, for example)
+never freezes the table. The footer says "Yanked 3000 rows (52 KB); clip.exe
+running" until the tool is done, then which channels took the text. A tool
+that has not finished after ten seconds is given up on and the footer says
+so; the yank is still in the in-app register for `p`.
 
 - Windows and WSL: the Windows clipboard through
   `cmd.exe /c chcp 65001 & clip`, so non-ASCII text survives; plain
@@ -439,7 +444,10 @@ and the bright one is the one Enter will press.
 
 `X` cuts: it copies before it removes (the current row, or the visual
 selection; whole columns are copied with every row of the table) and leaves
-the table alone if no clipboard channel accepted the text.
+the table alone when no clipboard channel can take the text at all. The
+clipboard tool finishes in the background as it does for a yank; should it
+fail, the footer says so and the cut is still in the register for `p`, and
+`u` puts it back.
 
 #### Adding rows and columns
 
