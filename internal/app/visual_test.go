@@ -31,7 +31,25 @@ func setupVisualTable(t *testing.T) {
 	bufferTable = tview.NewTable().SetSelectable(true, true).SetFixed(1, 1)
 	drawBuffer(b, bufferTable)
 	bufferTable.Select(1, 0)
+	bufferTable.SetSelectionChangedFunc(selectionChanged)
 	visual = visualOff
+}
+
+func TestVisualStatusFollowsCountedMotions(t *testing.T) {
+	setupVisualTable(t)
+	press(t, "V 2 j")
+	if !strings.Contains(statusMessage, "3 rows") {
+		t.Errorf("after V 2j the footer must count 3 rows, got %q", statusMessage)
+	}
+	press(t, "k")
+	if !strings.Contains(statusMessage, "2 rows") {
+		t.Errorf("after k the footer must count 2 rows, got %q", statusMessage)
+	}
+	press(t, "esc")
+	press(t, "v 2 l 1 j")
+	if !strings.Contains(statusMessage, "2 rows x 3 columns") {
+		t.Errorf("block selection after counted motions = %q", statusMessage)
+	}
 }
 
 func press(t *testing.T, spec string) {

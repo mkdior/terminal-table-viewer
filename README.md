@@ -400,12 +400,14 @@ the escape off.
 
 Press `v` (or `Ctrl-v`) to anchor a selection at the current cell and move
 with the usual motions, counts included, to extend it into a rectangle of
-cells; the footer shows its size. `V` selects whole rows instead, and `v`/`V`
-switch between the two. `o` swaps the anchor and the cursor so the other end
-can be adjusted. `y` copies the selection as tab-separated text and leaves
-visual mode (`Y` copies the whole rows of a block selection), `Esc`, `q` or
-pressing the same key again cancels without quitting, and any other command
-leaves visual mode before running.
+cells; the footer shows its size after every move, `20j` included. `V`
+selects whole rows instead, and `v`/`V` switch between the two. `o` swaps the
+anchor and the cursor so the other end can be adjusted. `y` copies the
+selection as tab-separated text and leaves visual mode (`Y` copies the whole
+rows of a block selection), `Esc`, `q` or pressing the same key again cancels
+without quitting, and any other command leaves visual mode before running.
+The header row is frozen and never part of a selection: `ggVGy` yanks every
+data row, and the footer counts those.
 
 ### Editing
 

@@ -239,11 +239,12 @@ func dispatch(act action) {
 	}
 	if info.motion {
 		userMovedCursor = true
-		if rawCount > 0 {
-			// Redraw the footer after the motion so the pending count disappears
-			// even when the selection-changed throttle skips this update.
-			defer drawFooterText(fileNameStr, statusMessage, cursorPosStr)
-		}
+		// Redraw the footer after the motion, from the status and position the
+		// selection change has set by then, so the pending count disappears and
+		// a visual selection shows its new size even when the selection-changed
+		// throttle skipped this update. Deferring drawFooterText itself would
+		// evaluate its arguments now and draw the values from before the move.
+		defer func() { drawFooterText(fileNameStr, statusMessage, cursorPosStr) }()
 	}
 	runAction(act, rawCount, count)
 }

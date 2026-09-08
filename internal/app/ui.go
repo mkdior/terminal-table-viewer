@@ -422,6 +422,35 @@ func secondGPress() bool {
 	return false
 }
 
+// footerUpdateThrottle spaces out footer rebuilds while the selection changes
+// quickly, as during a mouse drag or the progressive load. Visual mode is not
+// throttled: its footer text is the size of the selection, which must follow
+// every move. A motion typed at the keyboard redraws the footer afterwards in
+// any case (see dispatch).
+const footerUpdateThrottle = 50 * time.Millisecond
+
+var lastFooterUpdate time.Time
+
+// selectionChanged is the table's selection-changed callback: it tracks the
+// cursor for the footer and the preview box, and keeps the visual selection's
+// size in the status text.
+func selectionChanged(row, column int) {
+	if !userMovedCursor && (row != firstDataRow(b) || column != 0) {
+		userMovedCursor = true
+	}
+	currentCursorColumn = column
+	cursorPosStr = buildCursorPosStr(row, column)
+	updateCellPreview(row, column)
+	if visual != visualOff {
+		statusMessage = visualStatus()
+	}
+	now := time.Now()
+	if visual != visualOff || now.Sub(lastFooterUpdate) >= footerUpdateThrottle {
+		lastFooterUpdate = now
+		drawFooterText(fileNameStr, statusMessage, cursorPosStr)
+	}
+}
+
 // drawFooterText rebuilds the footer (file name, status, cursor position) and
 // the filter strip above it, and records cstr as the current status message.
 func drawFooterText(lstr, cstr, rstr string) {
@@ -541,34 +570,7 @@ func drawUI(b *Buffer) error {
 	mainView = newCellPreview(mainPage)
 	UI.AddPage("main", mainView, true, true)
 
-	//bufferTable Event
-	//bufferTable update cursor position with throttling to reduce UI redraws
-	var lastFooterUpdate time.Time
-	var footerUpdateThrottle = 50 * time.Millisecond
-
-	bufferTable.SetSelectionChangedFunc(func(row int, column int) {
-		// Mark that user has moved cursor if they moved from the initial position
-		if !userMovedCursor && (row != firstDataRow(b) || column != 0) {
-			userMovedCursor = true
-		}
-
-		// Update current cursor column
-		currentCursorColumn = column
-
-		cursorPosStr = buildCursorPosStr(row, column)
-		updateCellPreview(row, column)
-		if visual != visualOff {
-			statusMessage = visualStatus()
-		}
-
-		// Throttle footer updates to reduce unnecessary redraws
-		now := time.Now()
-		if now.Sub(lastFooterUpdate) >= footerUpdateThrottle {
-			lastFooterUpdate = now
-			// Rebuild the page with filter strip based on current column
-			drawFooterText(fileNameStr, statusMessage, cursorPosStr)
-		}
-	})
+	bufferTable.SetSelectionChangedFunc(selectionChanged)
 
 	//bufferTable HotKey Event: every key goes through the keymap
 	bufferTable.SetInputCapture(handleTableKey)
