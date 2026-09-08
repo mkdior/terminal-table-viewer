@@ -493,3 +493,147 @@ func TestYankAndPasteCells(t *testing.T) {
 		t.Errorf("paste keys = %q", got)
 	}
 }
+
+func TestInsertRowsAndColumns(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { cellEdit = nil })
+
+	// ir opens an empty row above the cursor, in insert mode.
+	press(t, "j i r")
+	if cellEdit == nil || cellEdit.ed.mode != editInsert || cellEdit.row != 2 || b.rowLen != 6 {
+		t.Fatalf("ir: editor %+v rows %d", cellEdit, b.rowLen)
+	}
+	if got := strings.Join(b.cont[2], "|"); got != "|||" || b.cont[3][0] != "a2" {
+		t.Errorf("the new row is empty and a2 moved down: %q %q", got, b.cont[3][0])
+	}
+	press(t, "n e w enter")
+	if b.cont[2][0] != "new" || editSummary() != "1 row added, 1 cell changed" {
+		t.Errorf("typing into the new row: %q summary %q", b.cont[2][0], editSummary())
+	}
+	press(t, "u u")
+	if b.rowLen != 5 || b.cont[2][0] != "a2" || dirty() {
+		t.Errorf("undo removes the added row: rows %d %q", b.rowLen, b.cont[2][0])
+	}
+
+	// or adds below, counts add several; Esc twice leaves the editor.
+	press(t, "g g 0 3 o r esc esc")
+	if b.rowLen != 8 || b.cont[2][0] != "" || b.cont[4][0] != "" || b.cont[5][0] != "a2" || cellEdit != nil {
+		t.Errorf("3or: %v editor %v", column(b, 0), cellEdit)
+	}
+	if r, _ := bufferTable.GetSelection(); r != 2 {
+		t.Errorf("cursor on the first new row, got %d", r)
+	}
+	press(t, "u")
+	if b.rowLen != 5 {
+		t.Errorf("one undo removes all three rows: %d", b.rowLen)
+	}
+
+	// ic inserts a column to the left and opens its header for a name.
+	press(t, "g g 0 l i c")
+	if cellEdit == nil || cellEdit.row != 0 || cellEdit.col != 1 || b.colLen != 5 {
+		t.Fatalf("ic: editor %+v cols %d", cellEdit, b.colLen)
+	}
+	if !strings.Contains(statusMessage, "header of column 1") {
+		t.Errorf("status %q", statusMessage)
+	}
+	press(t, "i d enter")
+	if got := joined(b.cont[0]); got != "h1 id h2 h3 h4" || b.cont[1][1] != "" || b.cont[1][2] != "b1" {
+		t.Errorf("named new column: header %q row %v", got, b.cont[1])
+	}
+	if r, c := bufferTable.GetSelection(); r != 1 || c != 1 {
+		t.Errorf("cursor stays on its row and moves to the new column: %d,%d", r, c)
+	}
+	if editSummary() != "1 column added, 1 cell changed" {
+		t.Errorf("summary %q", editSummary())
+	}
+	press(t, "u u")
+	if got := joined(b.cont[0]); got != "h1 h2 h3 h4" || dirty() {
+		t.Errorf("undo: %q", got)
+	}
+
+	// oc adds to the right; width limits and filters follow their columns.
+	wrappedColumns[2] = 50
+	press(t, "g g 0 o c esc esc")
+	if got := joined(b.cont[0]); got != "h1  h2 h3 h4" || wrappedColumns[3] != 50 || len(wrappedColumns) != 1 || cellEdit != nil {
+		t.Errorf("oc: %q wrapped %v", got, wrappedColumns)
+	}
+	press(t, "u")
+	if wrappedColumns[2] != 50 || len(wrappedColumns) != 1 || b.colLen != 4 {
+		t.Errorf("undo shifts the limits back: %v", wrappedColumns)
+	}
+	delete(wrappedColumns, 2)
+
+	// A cell edit before a column insertion survives both undos: rows that
+	// were reallocated get their old identity back.
+	press(t, "g g 0 E x enter")
+	if b.cont[1][0] != "1" {
+		t.Fatalf("precondition: %q", b.cont[1][0])
+	}
+	press(t, "i c esc esc u u")
+	if b.cont[1][0] != "a1" || b.colLen != 4 || dirty() {
+		t.Errorf("cell edit undone through a column insertion: %q cols %d", b.cont[1][0], b.colLen)
+	}
+
+	// Visual mode inserts around the selection.
+	press(t, "g g 0 j v j o r esc esc")
+	if b.rowLen != 6 || b.cont[4][0] != "" || b.cont[3][0] != "a3" {
+		t.Errorf("visual or below the selection: %v", column(b, 0))
+	}
+	press(t, "u g g 0 l v l i c esc esc")
+	if got := joined(b.cont[0]); got != "h1  h2 h3 h4" {
+		t.Errorf("visual ic left of the selection: %q", got)
+	}
+	press(t, "u")
+
+	// Rows cannot be inserted while a filter hides rows.
+	originalBuffer = b
+	activeFilters[0] = FilterOptions{Query: "a2|a4", Operator: "regex"}
+	isFiltered = true
+	b = applyActiveFilters(originalBuffer)
+	drawBuffer(b, bufferTable)
+	bufferTable.Select(1, 0)
+	press(t, "i r")
+	if statusMessage != "Clear the filters to insert rows" || dirty() || cellEdit != nil {
+		t.Errorf("filtered ir: %q dirty=%v", statusMessage, dirty())
+	}
+	press(t, "i c esc esc") // columns are fine: the view is re-derived
+	if b.colLen != 5 || originalBuffer.colLen != 5 || activeFilters[1].Query != "a2|a4" {
+		t.Errorf("filtered ic: view %d base %d filters %v", b.colLen, originalBuffer.colLen, activeFilters)
+	}
+}
+
+func TestAmbiguousKeysWaitForTheChord(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { cellEdit = nil })
+	press(t, "i")
+	if cellEdit != nil || pendingAct != actInsert || pendingKeys() != "i" {
+		t.Fatalf("i must wait: editor %v pending %q keys %q", cellEdit, pendingAct, pendingKeys())
+	}
+	flushPendingChord() // what the timer does
+	if cellEdit == nil || cellEdit.ed.mode != editInsert {
+		t.Fatal("the deferred i opens the editor")
+	}
+	press(t, "esc esc")
+	press(t, "i x") // x is not a chord: i runs, then x is typed into the editor
+	if cellEdit == nil || string(cellEdit.ed.text) != "xa1" {
+		t.Fatalf("i then x: %+v", cellEdit)
+	}
+	press(t, "esc esc")
+	press(t, "3 i r esc esc") // the count typed before the chord applies to it
+	if b.rowLen != 8 {
+		t.Errorf("3ir adds three rows: %d", b.rowLen)
+	}
+	press(t, "u")
+	press(t, "v j o") // o alone (visual swap) is deferred while o r / o c are possible
+	if visual != visualBlock || pendingAct != actVisualSwap {
+		t.Fatalf("o must wait in visual mode: visual %v pending %q", visual, pendingAct)
+	}
+	press(t, "k") // a motion: o runs (swap), then k moves
+	if r, _ := bufferTable.GetSelection(); r != 1 || visualAnchorRow != 2 {
+		t.Errorf("o then k: cursor row %d anchor %d", r, visualAnchorRow)
+	}
+	press(t, "esc d g g") // chords through the operator still work
+	if b.rowLen != 4 {
+		t.Errorf("dgg after the refactor: %d rows", b.rowLen)
+	}
+}

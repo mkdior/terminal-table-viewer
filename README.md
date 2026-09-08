@@ -292,6 +292,10 @@ cc: clear the cell and type its new value; in visual mode every selected
     cell gets it
 p, P: paste the last yank or removal over the cell; a block is laid out from
     the cursor, in visual mode a single value fills the selection
+ir, or: insert an empty row above or below the cursor (with a count, N rows)
+    and start typing in it; in visual mode around the selection
+ic, oc: insert an empty column left or right of the cursor (with a count, N
+    columns) and name it in the header; in visual mode around the selection
 u: undo the last edit; with a count, N edits
 W: write the table back to the file
 
@@ -478,6 +482,14 @@ Bulk edit: in visual mode `i` (or Ctrl-I), `a` and `cc` work like vim's
     (`cc`) in every selected cell when you press Esc or Enter, as one undo
     step. Select five empty cells with `Ctrl-v`, press `Ctrl-I`, type, Esc:
     all five hold the text.
+Adding: `ir` and `or` insert an empty row above or below the cursor, `ic`
+    and `oc` an empty column left or right, following sc-im (vim's `i` is
+    before, `o` after). The cursor moves to the new row, whose cell opens in
+    insert mode, or to the new column, whose header opens for its name (Esc
+    leaves it unnamed). Counts add several. `u` removes them again. Rows
+    cannot be inserted while a filter is active, since they would not be
+    visible. Because `i` and `o` are also commands of their own, they wait
+    half a second for the second key, as vim does with `timeoutlen`.
 Paste: `y`, `Y`, a visual yank, `X` and `d` also fill an in-app register
     (the system clipboard is never read). `p` or `P` replaces the cell under
     the cursor with it; a yanked block is laid out from the cursor and clipped
@@ -577,8 +589,8 @@ Actions: `move_left`, `move_right`, `move_down`, `move_up`, `next_column`,
     `cancel`, `filter`, `remove_filter`, `sort_asc`, `sort_desc`,
     `toggle_type`, `yank`, `yank_row`, `visual`, `visual_row`,
     `visual_swap`, `delete`, `cut`, `clear`, `edit`, `insert`, `append`,
-    `change`, `paste`, `undo`, `write`, `toggle_width`, `stats`, `help`,
-    `quit`
+    `change`, `paste`, `insert_row`, `open_row`, `insert_column`,
+    `open_column`, `undo`, `write`, `toggle_width`, `stats`, `help`, `quit`
 
 ```toml
 [keys]

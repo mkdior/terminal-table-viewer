@@ -116,6 +116,8 @@ func loadDataAsync(loader func(*Buffer, chan<- bool, chan<- error), b *Buffer) (
 // runApp starts the UI application if not in debug mode
 func runApp() error {
 	if !debug {
+		uiRunning.Store(true)
+		defer uiRunning.Store(false)
 		if err := app.SetRoot(UI, true).SetFocus(UI).Run(); err != nil {
 			return err
 		}

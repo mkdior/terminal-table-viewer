@@ -23,6 +23,10 @@ type edit struct {
 	cells    []cellChange          // cells changed
 	order    [][]string            // row order before a sort
 	sortedBy string                // "Age ascending", for the summary
+	added    []removedRow          // empty rows inserted (undo removes them by identity)
+	addedAt  int                   // index of the first inserted column
+	addedN   int                   // number of inserted columns
+	prevRows [][]string            // row slices before the columns were inserted
 }
 
 // cellChange remembers the previous value of one cell. The row slice is the
@@ -131,12 +135,14 @@ func plural(n int, noun string) string {
 // editSummary describes the pending edits, e.g. "1 column (Age) and 3 rows
 // removed, 2 cells changed", or "" when there are none.
 func editSummary() string {
-	rows, cells := 0, 0
+	rows, cells, rowsAdded, colsAdded := 0, 0, 0, 0
 	var cols []string
 	sortedBy := ""
 	for _, e := range edits {
 		rows += len(e.rows)
 		cells += len(e.cells)
+		rowsAdded += len(e.added)
+		colsAdded += e.addedN
 		cols = append(cols, e.names...)
 		if e.sortedBy != "" {
 			sortedBy = e.sortedBy
@@ -156,6 +162,16 @@ func editSummary() string {
 	var parts []string
 	if len(removed) > 0 {
 		parts = append(parts, strings.Join(removed, " and ")+" removed")
+	}
+	var added []string
+	if colsAdded > 0 {
+		added = append(added, plural(colsAdded, "column"))
+	}
+	if rowsAdded > 0 {
+		added = append(added, plural(rowsAdded, "row"))
+	}
+	if len(added) > 0 {
+		parts = append(parts, strings.Join(added, " and ")+" added")
 	}
 	if cells > 0 {
 		parts = append(parts, plural(cells, "cell")+" changed")
@@ -389,7 +405,72 @@ func changeCell(rowIdx, col int, value string) {
 	if b != base {
 		b.trackWidth(col, value)
 	}
-	editStatus(fmt.Sprintf("Changed %s at row %d", columnTitle(col), rowIdx) + refreshView(rowIdx, col))
+	cursorRow := rowIdx
+	if rowIdx < firstDataRow(b) { // a header edit keeps the cursor on its row
+		cursorRow, _ = bufferTable.GetSelection()
+	}
+	editStatus(fmt.Sprintf("Changed %s at row %d", columnTitle(col), rowIdx) + refreshView(cursorRow, col))
+}
+
+// maxInsert caps how many rows or columns one command may add.
+const maxInsert = 1000
+
+// insertRows adds n empty rows above (or, with below, under) row r of the
+// table as one edit, moves the cursor to the first of them and starts typing
+// in it, as vim's o does. With a filter active the new rows would not be
+// visible, so it is refused.
+func insertRows(r, n int, below bool) {
+	if !editsAllowed() {
+		return
+	}
+	if isFiltered {
+		drawFooterText(fileNameStr, "Clear the filters to insert rows", cursorPosStr)
+		return
+	}
+	n = clampInt(n, 1, maxInsert)
+	at := r
+	if below {
+		at = r + 1
+	}
+	at = clampInt(at, firstDataRow(b), b.rowLen)
+	rows := make([]removedRow, n)
+	for i := range rows {
+		rows[i] = removedRow{at + i, make([]string, b.colLen)}
+	}
+	b.insertRows(rows)
+	edits = append(edits, edit{added: rows})
+	_, col := bufferTable.GetSelection()
+	editStatus("Added " + plural(n, "row") + refreshView(at, col))
+	startCellEdit(actInsert)
+}
+
+// insertColumns adds n empty columns left of (or, with right, after) column c
+// as one edit, moves the cursor onto the first and opens its header cell for
+// a name. Filters and width limits follow their columns.
+func insertColumns(c, n int, right bool) {
+	if !editsAllowed() {
+		return
+	}
+	n = clampInt(n, 1, maxInsert)
+	base := baseBuffer()
+	at := c
+	if right {
+		at = c + 1
+	}
+	at = clampInt(at, 0, base.colLen)
+	cols := make([]removedCol, n)
+	for i := range cols {
+		cols[i] = removedCol{cells: make([]string, base.rowLen), colType: colTypeStr}
+	}
+	prev := base.insertColumns(at, cols)
+	restoreColumnKeys(activeFilters, at, n, nil)
+	restoreColumnKeys(wrappedColumns, at, n, nil)
+	edits = append(edits, edit{addedAt: at, addedN: n, prevRows: prev})
+	row, _ := bufferTable.GetSelection()
+	editStatus("Added " + plural(n, "column") + refreshView(row, at))
+	if b.rowFreeze > 0 {
+		startHeaderEdit(at)
+	}
 }
 
 // undoEdits reverts the n most recent edits.
@@ -430,6 +511,20 @@ func undoEdits(n int) {
 		case e.order != nil:
 			base.restoreOrder(e.order)
 			did = append(did, "order before sorting by "+e.sortedBy+" restored")
+		case len(e.added) > 0:
+			rows := make([][]string, len(e.added))
+			for i, r := range e.added {
+				rows[i] = r.row
+			}
+			base.removeRows(rows)
+			row = e.added[0].index
+			did = append(did, plural(len(e.added), "added row")+" removed")
+		case e.addedN > 0:
+			base.undoInsertColumns(e.addedAt, e.addedN, e.prevRows)
+			dropColumnKeys(activeFilters, e.addedAt, e.addedAt+e.addedN-1)
+			dropColumnKeys(wrappedColumns, e.addedAt, e.addedAt+e.addedN-1)
+			col = e.addedAt
+			did = append(did, plural(e.addedN, "added column")+" removed")
 		}
 	}
 	editStatus("Undo: " + strings.Join(did, ", ") + refreshView(row, col))

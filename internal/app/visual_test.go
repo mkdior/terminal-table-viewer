@@ -68,7 +68,8 @@ func TestVisualBlockSelectionAndYank(t *testing.T) {
 		t.Errorf("status = %q", got)
 	}
 
-	press(t, "o") // swap: cursor goes back to the anchor
+	press(t, "o")       // swap: cursor goes back to the anchor
+	flushPendingChord() // o also starts "o r" and "o c", so it waits for the chord timeout
 	if row, col := bufferTable.GetSelection(); row != 2 || col != 1 {
 		t.Errorf("after o cursor = %d,%d, want 2,1", row, col)
 	}

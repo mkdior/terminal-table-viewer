@@ -1035,16 +1035,20 @@ func (b *Buffer) removeColumns(c1, c2 int) []removedCol {
 	return removed
 }
 
-// insertColumns puts columns removed by removeColumns back at index at. Rows
-// grow within their capacity, so their slices keep their identity.
-func (b *Buffer) insertColumns(at int, cols []removedCol) {
+// insertColumns puts columns at index at: columns removed by removeColumns
+// (their rows grow back within their capacity, keeping their identity) or
+// new empty ones (rows without spare capacity are reallocated). It returns
+// the row slices from before the call, which undoInsertColumns needs to give
+// reallocated rows their old identity back.
+func (b *Buffer) insertColumns(at int, cols []removedCol) (prev [][]string) {
 	k := len(cols)
 	if k == 0 {
-		return
+		return nil
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	at = clampInt(at, 0, b.colLen)
+	prev = append([][]string(nil), b.cont...)
 	for i, row := range b.cont {
 		n := len(row)
 		if cap(row) >= n+k {
@@ -1077,6 +1081,35 @@ func (b *Buffer) insertColumns(at int, cols []removedCol) {
 		b.internCols = insertSlice(b.internCols, at, interned)
 	}
 	b.colLen += k
+	return prev
+}
+
+// undoInsertColumns reverts an insertColumns of k columns at index at, given
+// the row slices from before it. A row that was reallocated goes back to its
+// old slice, whose array still holds the old cells; a row that grew in place
+// is shifted back. Either way every row keeps the identity it had before the
+// insertion, which cell-edit undo records rely on.
+func (b *Buffer) undoInsertColumns(at, k int, prev [][]string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i, row := range b.cont {
+		end := min(at+k, len(row))
+		for c := at; c < end; c++ {
+			b.memoryUsage -= int64(len(row[c])) + stringOverheadBytes + 8
+		}
+		if i < len(prev) && len(prev[i]) > 0 && len(row) > 0 && &prev[i][0] != &row[0] {
+			b.cont[i] = prev[i]
+			continue
+		}
+		n := at + copy(row[at:], row[end:])
+		clear(row[n:])
+		b.cont[i] = row[:n]
+	}
+	b.colType = cutSlice(b.colType, at, at+k-1)
+	b.colWidth = cutSlice(b.colWidth, at, at+k-1)
+	b.interners = cutSlice(b.interners, at, at+k-1)
+	b.internCols = cutSlice(b.internCols, at, at+k-1)
+	b.colLen -= k
 }
 
 // setCell replaces the value of one cell of row (a row slice of this buffer)

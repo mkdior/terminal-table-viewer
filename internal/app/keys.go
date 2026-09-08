@@ -3,10 +3,16 @@ package app
 import (
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
+
+// uiRunning is set while app.Run is in progress. The chord timer only queues
+// work on a running application: tests build one without running it, and a
+// timer must not fire into an application that has just been stopped.
+var uiRunning atomic.Bool
 
 // chordTimeout is how long a partial key sequence (such as the first g of gg)
 // waits for its next key before being discarded.
@@ -108,9 +114,12 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 func setPendingChord(seq []keyStroke, deferred action) {
 	pendingChord, pendingChordSince, pendingAct = seq, time.Now(), deferred
 	chordGeneration++
-	if deferred != "" && app != nil {
+	if deferred != "" && uiRunning.Load() {
 		gen := chordGeneration
 		time.AfterFunc(chordTimeout, func() {
+			if !uiRunning.Load() {
+				return
+			}
 			app.QueueUpdateDraw(func() {
 				if chordGeneration == gen && pendingAct != "" {
 					flushPendingChord()
@@ -185,6 +194,20 @@ func dispatch(act action) {
 			r1, c1, r2, c2 := visualRect()
 			visual = visualOff
 			pasteCells(r1, c1, r2, c2)
+			return
+		case actInsertRow, actOpenRow, actInsertColumn, actOpenColumn:
+			r1, c1, r2, c2 := visualRect()
+			visual = visualOff
+			switch act {
+			case actInsertRow:
+				insertRows(r1, count, false)
+			case actOpenRow:
+				insertRows(r2, count, true)
+			case actInsertColumn:
+				insertColumns(c1, count, false)
+			default:
+				insertColumns(c2, count, true)
+			}
 			return
 		case actCancel, actQuit:
 			// In visual mode q backs out of the selection like Esc; it never quits.
@@ -420,6 +443,14 @@ func runAction(act action, rawCount, count int) {
 		clearCells(row, col, row, col+count-1)
 	case actPaste:
 		pasteCells(row, col, row, col)
+	case actInsertRow:
+		insertRows(row, count, false)
+	case actOpenRow:
+		insertRows(row, count, true)
+	case actInsertColumn:
+		insertColumns(col, count, false)
+	case actOpenColumn:
+		insertColumns(col, count, true)
 	case actUndo:
 		undoEdits(count)
 	case actEdit, actInsert, actAppend, actChange:

@@ -52,6 +52,18 @@ func startBulkEdit(how action, r1, c1, r2, c2 int) {
 	showEditStatus()
 }
 
+// startHeaderEdit opens the header cell of column col, appending, so a new
+// column can be named; the table cursor stays on its data row.
+func startHeaderEdit(col int) {
+	if !editsAllowed() || b.rowFreeze == 0 || b.rowLen == 0 || col < 0 || col >= len(b.cont[0]) {
+		return
+	}
+	ed := newLineEditor(b.cont[0][col])
+	ed.key(editKey{tcell.KeyRune, 'A'})
+	cellEdit = &cellEditor{ed: ed, row: 0, col: col}
+	showEditStatus()
+}
+
 // applyBulk stores the edited text in every selected cell. The typed part is
 // what was added before (i) or after (a) the first cell's original value; if
 // the original itself was edited, or for cc, the whole text goes everywhere.
@@ -174,7 +186,11 @@ func showEditStatus() {
 		cells := (bk.r2 - bk.r1 + 1) * (bk.c2 - bk.c1 + 1)
 		mode = fmt.Sprintf("-- INSERT --  Esc or Enter applies to %s", plural(cells, "cell"))
 	}
-	drawFooterText(fileNameStr, columnTitle(cellEdit.col)+"  "+mode, cursorPosStr)
+	title := columnTitle(cellEdit.col)
+	if cellEdit.row == 0 && b.rowFreeze > 0 {
+		title = "header of column " + I2S(cellEdit.col)
+	}
+	drawFooterText(fileNameStr, title+"  "+mode, cursorPosStr)
 }
 
 // grapheme is one user-perceived character of the text being edited: the

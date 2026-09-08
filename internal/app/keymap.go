@@ -55,6 +55,10 @@ const (
 	actAppend       action = "append"
 	actChange       action = "change"
 	actPaste        action = "paste"
+	actInsertRow    action = "insert_row"
+	actOpenRow      action = "open_row"
+	actInsertColumn action = "insert_column"
+	actOpenColumn   action = "open_column"
 )
 
 // actionInfo describes an action for the help dialog and the config file.
@@ -105,6 +109,10 @@ var actionCatalog = []struct {
 	{actionInfo{actInsert, "Edit", "Edit the cell, inserting at the start; in visual mode the text is inserted in every selected cell (Esc applies)", false}, []string{"i", "ctrl+i"}},
 	{actionInfo{actAppend, "Edit", "Edit the cell, appending at the end; in visual mode the text is appended to every selected cell", false}, []string{"a"}},
 	{actionInfo{actChange, "Edit", "Clear the cell and type its new value; in visual mode every selected cell gets it", false}, []string{"c c"}},
+	{actionInfo{actInsertRow, "Edit", "Insert an empty row above the cursor and start typing in it; with a count, N rows; in visual mode above the selection", false}, []string{"i r"}},
+	{actionInfo{actOpenRow, "Edit", "Insert an empty row below the cursor and start typing in it; with a count, N rows; in visual mode below the selection", false}, []string{"o r"}},
+	{actionInfo{actInsertColumn, "Edit", "Insert an empty column left of the cursor and name it; with a count, N columns; in visual mode left of the selection", false}, []string{"i c"}},
+	{actionInfo{actOpenColumn, "Edit", "Insert an empty column right of the cursor and name it; with a count, N columns; in visual mode right of the selection", false}, []string{"o c"}},
 	{actionInfo{actPaste, "Edit", "Paste the last yank or removal over the cell; a block is laid out from the cursor, in visual mode a single value fills the selection", false}, []string{"p", "P"}},
 	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
 	{actionInfo{actWrite, "Edit", "Write the table back to the file (the original is kept in the backup directory)", false}, []string{"W"}},
