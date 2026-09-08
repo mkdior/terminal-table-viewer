@@ -566,8 +566,10 @@ Key spellings: a single character such as `h`, `G` or `$`; a name from `esc`,
     or `shift+v`
 Sequences: a quoted string with spaces is a multi-key chord, for example
     `first_row = "g g"`
-Validation: a key bound to two actions, or a chord that is a prefix of
-    another, is rejected at startup with a message naming both actions
+Validation: a key bound to two actions is rejected at startup with a message
+    naming both. A key that is also the start of a longer chord (`i` and
+    `i c`) is allowed: it waits half a second for the next key, as vim's
+    `timeoutlen` does, and runs on its own when none comes
 Actions: `move_left`, `move_right`, `move_down`, `move_up`, `next_column`,
     `prev_column`, `first_row`, `last_row`, `first_column`, `last_column`,
     `half_page_down`, `half_page_up`, `page_down`, `page_up`, `search`,

@@ -104,7 +104,7 @@ func initView() {
 	currentCursorColumn = 0                     // Initialize cursor column
 	lastGPress = time.Time{}                    // Initialize vim navigation state
 	pendingCount = 0
-	pendingChord = nil
+	pendingChord, pendingAct = nil, ""
 	pendingOp, pendingOpRaw, pendingOpCount = "", 0, 0
 	visual = visualOff
 	edits = nil

@@ -12,10 +12,15 @@ import (
 // waits for its next key before being discarded.
 const chordTimeout = 500 * time.Millisecond
 
-// Pending key sequence state for multi-key bindings.
+// Pending key sequence state for multi-key bindings. A key that is bound on
+// its own and also starts a longer chord (i and "i c") is ambiguous: as vim
+// does with 'timeoutlen', its own action is deferred until the next key shows
+// it was not the start of the chord, or until chordTimeout passes.
 var (
 	pendingChord      []keyStroke
 	pendingChordSince time.Time
+	pendingAct        action // the deferred action of an ambiguous pending key
+	chordGeneration   int    // invalidates the timers of superseded chords
 )
 
 // Operator-pending state: d waits for a motion (dj, d$) or for itself (dd),
@@ -38,6 +43,39 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 		cellEdit.handleKey(event)
 		return nil
 	}
+	stroke := strokeFromEvent(event)
+
+	if len(pendingChord) > 0 && time.Since(pendingChordSince) > chordTimeout {
+		flushPendingChord()
+	}
+	if len(pendingChord) > 0 {
+		seq := append(append([]keyStroke{}, pendingChord...), stroke)
+		act, prefix := keys.resolve(seq)
+		switch {
+		case act != "" && !prefix:
+			clearPendingChord()
+			dispatch(act)
+			return nil
+		case act != "" || prefix:
+			setPendingChord(seq, act) // still a prefix, or ambiguous again
+			return nil
+		}
+		// The chord fails here. With an operator pending the failed motion
+		// cancels it, so "d g x" never runs x on its own. Otherwise the
+		// deferred single action runs now and this key is handled by itself,
+		// which may mean typing it into the editor that action just opened.
+		if pendingOp != "" {
+			clearPendingChord()
+			pendingCount = 0
+			cancelOperator()
+			return nil
+		}
+		flushPendingChord()
+		if cellEdit != nil {
+			cellEdit.handleKey(event)
+			return nil
+		}
+	}
 
 	// Vim-style count prefix: digits accumulate and the next action uses
 	// them (5j, 3l, 12G). A leading 0 is left to the keymap (first_column).
@@ -46,44 +84,81 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 
-	stroke := strokeFromEvent(event)
-	if len(pendingChord) > 0 && time.Since(pendingChordSince) > chordTimeout {
-		pendingChord = nil
-	}
-	seq := append(append([]keyStroke{}, pendingChord...), stroke)
-	act, prefix := keys.resolve(seq)
-	if act == "" && len(pendingChord) > 0 && pendingOp == "" {
-		// The sequence went nowhere: drop the prefix and retry the key alone.
-		// With an operator pending the failed motion cancels it instead, so
-		// "d g x" never runs x on its own.
-		seq = []keyStroke{stroke}
-		act, prefix = keys.resolve(seq)
-	}
-	if act == "" && prefix {
-		pendingChord, pendingChordSince = seq, time.Now()
+	act, prefix := keys.resolve([]keyStroke{stroke})
+	switch {
+	case act == "" && prefix:
+		setPendingChord([]keyStroke{stroke}, "")
 		return nil
-	}
-	pendingChord = nil
-	if act == "" {
+	case act != "" && prefix && pendingOp == "":
+		// Ambiguous: wait for the next key or the timeout (vim's 'timeoutlen').
+		setPendingChord([]keyStroke{stroke}, act)
+		return nil
+	case act == "":
 		pendingCount = 0
 		cancelOperator()
 		return nil
 	}
+	dispatch(act)
+	return nil
+}
 
+// setPendingChord records a partial or ambiguous key sequence. When an action
+// is deferred it arms the timer that runs it if no key follows in time; the
+// footer shows the pending keys like vim's showcmd.
+func setPendingChord(seq []keyStroke, deferred action) {
+	pendingChord, pendingChordSince, pendingAct = seq, time.Now(), deferred
+	chordGeneration++
+	if deferred != "" && app != nil {
+		gen := chordGeneration
+		time.AfterFunc(chordTimeout, func() {
+			app.QueueUpdateDraw(func() {
+				if chordGeneration == gen && pendingAct != "" {
+					flushPendingChord()
+				}
+			})
+		})
+	}
+	drawFooterText(fileNameStr, statusMessage, cursorPosStr)
+}
+
+// clearPendingChord forgets the pending key sequence.
+func clearPendingChord() {
+	if len(pendingChord) == 0 {
+		return
+	}
+	pendingChord, pendingAct = nil, ""
+	chordGeneration++
+	drawFooterText(fileNameStr, statusMessage, cursorPosStr)
+}
+
+// flushPendingChord drops the pending key sequence, running its deferred
+// action when it has one.
+func flushPendingChord() {
+	act := pendingAct
+	clearPendingChord()
+	if act != "" {
+		dispatch(act)
+	}
+}
+
+// dispatch runs a resolved action with the count typed before it: it feeds a
+// pending operator, applies visual mode's meanings, starts the d operator, or
+// runs the action outright.
+func dispatch(act action) {
 	rawCount, count := takeCount()
 	info, _ := actionByName(string(act))
 	if pendingOp != "" {
 		finishOperator(act, info, rawCount, count)
-		return nil
+		return
 	}
 	if visual != visualOff {
 		switch act {
 		case actYank:
 			yankVisual(false)
-			return nil
+			return
 		case actYankRow:
 			yankVisual(true)
-			return nil
+			return
 		case actDelete, actCut:
 			// Structure: V removes the selected rows, v the selected columns.
 			r1, c1, r2, c2 := visualRect()
@@ -94,27 +169,27 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 			} else {
 				deleteColumns(c1, c2, act == actCut)
 			}
-			return nil
+			return
 		case actClear:
 			r1, c1, r2, c2 := visualRect()
 			visual = visualOff
 			clearCells(r1, c1, r2, c2)
-			return nil
+			return
 		case actInsert, actAppend, actChange:
 			// Block insert: type once, apply to every selected cell.
 			r1, c1, r2, c2 := visualRect()
 			visual = visualOff
 			startBulkEdit(act, r1, c1, r2, c2)
-			return nil
+			return
 		case actPaste:
 			r1, c1, r2, c2 := visualRect()
 			visual = visualOff
 			pasteCells(r1, c1, r2, c2)
-			return nil
+			return
 		case actCancel, actQuit:
 			// In visual mode q backs out of the selection like Esc; it never quits.
 			exitVisual("All Done")
-			return nil
+			return
 		case actVisual, actVisualRow, actVisualSwap:
 		default:
 			if !info.motion {
@@ -125,7 +200,7 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 	if act == actDelete {
 		pendingOp, pendingOpRaw, pendingOpCount = act, rawCount, count
 		drawFooterText(fileNameStr, statusMessage, cursorPosStr)
-		return nil
+		return
 	}
 	if info.motion {
 		userMovedCursor = true
@@ -136,7 +211,6 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 	runAction(act, rawCount, count)
-	return nil
 }
 
 // showcmdWidth is the fixed width of the footer slot that shows the typed but
@@ -163,6 +237,9 @@ func pendingKeys() string {
 	}
 	if pendingCount > 0 {
 		s += strconv.Itoa(pendingCount)
+	}
+	if len(pendingChord) > 0 {
+		s += chordString(pendingChord)
 	}
 	return s
 }

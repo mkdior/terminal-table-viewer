@@ -108,8 +108,11 @@ func TestKeymapValidateReportsConflicts(t *testing.T) {
 	km = defaultKeymap()
 	g, _ := parseChord("g")
 	km.set(actQuit, [][]keyStroke{g})
-	if err := km.validate(); err == nil || !strings.Contains(err.Error(), "prefix") {
-		t.Errorf("a binding that is a prefix of another must be rejected, got %v", err)
+	if err := km.validate(); err != nil {
+		t.Errorf("a binding that is a prefix of another is allowed (the chord timeout resolves it), got %v", err)
+	}
+	if act, prefix := km.resolve(g); act != actQuit || !prefix {
+		t.Errorf("g must resolve to quit and still be a prefix of gg: %q %v", act, prefix)
 	}
 
 	km = defaultKeymap()

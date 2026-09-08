@@ -297,9 +297,10 @@ func chordEqual(a, b []keyStroke) bool {
 	return true
 }
 
-// validate reports a key sequence bound to two actions, one that is a prefix
-// of another (neither could be resolved unambiguously), or a binding on a
-// digit 1-9, which the count prefix consumes before the keymap sees it.
+// validate reports a key sequence bound to two actions, or a binding on a
+// digit 1-9, which the count prefix consumes before the keymap sees it. A
+// sequence may be a prefix of a longer one (i and "i c"): the shorter binding
+// then waits for the next key or the chord timeout, as vim's 'timeoutlen'.
 func (km *keymap) validate() error {
 	type owner struct {
 		act   action
@@ -323,11 +324,8 @@ func (km *keymap) validate() error {
 			if len(x.chord) > len(y.chord) {
 				x, y = y, x
 			}
-			if chordEqual(x.chord, y.chord[:len(x.chord)]) {
-				if len(x.chord) == len(y.chord) {
-					return fmt.Errorf("key %q is bound to both %s and %s", chordString(x.chord), x.act, y.act)
-				}
-				return fmt.Errorf("key %q (%s) is a prefix of %q (%s)", chordString(x.chord), x.act, chordString(y.chord), y.act)
+			if len(x.chord) == len(y.chord) && chordEqual(x.chord, y.chord) {
+				return fmt.Errorf("key %q is bound to both %s and %s", chordString(x.chord), x.act, y.act)
 			}
 		}
 	}

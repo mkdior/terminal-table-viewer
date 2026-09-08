@@ -64,7 +64,6 @@ func TestApplyConfigRejectsBadInput(t *testing.T) {
 		"unknown action": "[keys]\nfly = \"x\"\n",
 		"bad key":        "[keys]\nquit = \"hyper+q\"\n",
 		"conflict":       "[keys]\nquit = \"h\"\n",
-		"prefix":         "[keys]\nquit = \"g\"\n",
 		"unknown role":   "[theme]\nsparkle = \"red\"\n",
 		"bad colour":     "[theme]\naccent = \"colour999\"\n",
 		"unknown theme":  "[theme]\nname = \"nope\"\n",
