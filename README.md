@@ -529,8 +529,9 @@ remappable; the table keys are.
 
 `zc` hides the column under the cursor (in visual mode the selected columns)
 the way vim closes a fold: the column collapses to a one-character dimmed
-marker (`»`) so its place stays visible, and the footer names it while the
-cursor is on it. `zo` shows it again, `za` toggles, `zR` shows every hidden
+marker (`»`) so its place stays visible; while the cursor is on it, the
+footer names it and the preview box shows the column name and the cell's
+value, whether or not it would fit. `zo` shows it again, `za` toggles, `zR` shows every hidden
 column. Editing a cell in a hidden column opens it first. At least one column
 always stays visible. Hiding is a view setting: it is not written by `W`, not
 undone by `u`, and it follows its column when columns are removed or added.

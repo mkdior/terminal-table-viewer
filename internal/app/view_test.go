@@ -165,9 +165,21 @@ func TestHiddenColumnsFoldToAMarker(t *testing.T) {
 	screen.Show()
 	out := screenText(screen)
 	header := strings.Split(out, "\n")[0]
-	if strings.Contains(header, "header1") || strings.Contains(out, "r1c1xxxx") || !strings.Contains(header, foldMarker) {
+	if strings.Contains(header, "header1") || !strings.Contains(header, foldMarker) {
 		t.Errorf("a hidden column shows only its marker:\n%s", out)
 	}
+	if rowOf(out, "r1c1xxxx") != rowOf(out, "r1c0xxxx") && !strings.Contains(out, " header1 (hidden) ") {
+		t.Errorf("the cursor on a hidden column previews its name and value:\n%s", out)
+	}
+	if mainView.text != "r1c1xxxx" || !strings.Contains(mainView.box.GetTitle(), "header1 (hidden)") {
+		t.Errorf("preview text %q title %q", mainView.text, mainView.box.GetTitle())
+	}
+	press(t, "l")                                 // off the hidden column: no preview for a normal, short cell
+	updateCellPreview(bufferTable.GetSelection()) // what the selection callback does in the app
+	if mainView.text != "" {
+		t.Errorf("preview must go when leaving the hidden column: %q", mainView.text)
+	}
+	press(t, "h")
 	if !strings.Contains(header, "header2") || !strings.Contains(header, "header5") {
 		t.Errorf("the freed space shows more columns:\n%s", out)
 	}

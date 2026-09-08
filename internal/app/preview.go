@@ -89,6 +89,10 @@ func (p *cellPreview) Draw(screen tcell.Screen) {
 	if !ok {
 		return
 	}
+	// The title (the column name) must fit too, or a short value would cut it.
+	if titleW := uniseg.StringWidth(p.box.GetTitle()) + 2; titleW > w {
+		w = min(titleW, tw)
+	}
 	p.box.SetText(strings.Join(lines, "\n"))
 	x, y := p.origin(w, h, tx, ty, tw, th)
 	p.box.SetRect(x, y, w, h)
@@ -189,14 +193,36 @@ func columnTitle(col int) string {
 	return "Column " + I2S(col)
 }
 
-// updateCellPreview shows or hides the preview for the selected cell.
+// updateCellPreview shows or hides the preview for the selected cell: the full
+// value of a cell cut by a width limit, or, on a hidden column, the column's
+// name and value, which the fold marker does not show.
 func updateCellPreview(row, col int) {
 	if mainView == nil {
 		return
+	}
+	if hiddenCols[col] {
+		if text, ok := hiddenCellText(row, col); ok {
+			mainView.show(columnTitle(col)+" (hidden)", text, row, col)
+			return
+		}
 	}
 	if text, ok := truncatedCellText(row, col); ok {
 		mainView.show(columnTitle(col), text, row, col)
 	} else {
 		mainView.hide()
 	}
+}
+
+// hiddenCellText returns the value of a data cell in a hidden column for the
+// preview, "(empty)" for a blank one so the box still names the column.
+func hiddenCellText(row, col int) (string, bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if row < b.rowFreeze || row >= b.rowLen || col < 0 || col >= len(b.cont[row]) {
+		return "", false
+	}
+	if text := b.cont[row][col]; text != "" {
+		return text, true
+	}
+	return "(empty)", true
 }
