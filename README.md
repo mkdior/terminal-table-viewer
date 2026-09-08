@@ -143,86 +143,31 @@ ttv file.vcf --skip-prefix "##"    # skip metadata lines
 
 Syntax: `ttv [FILE] [flags]`
 
-### --separator
-
-Short: `-s`
-Argument: delimiter character; use `\t` for tab
-Default: detected from the first lines, with `.csv` and `.tsv` suffixes as a
-    hint
-
-### --lines
-
-Short: `-n`
-Argument: N
-Effect: load only the first N lines
-
-### --skip-prefix
-
-Argument: comma-separated list of prefixes
-Effect: skip lines starting with any of the prefixes
-
-### --skip-lines
-
-Argument: N
-Effect: skip the first N lines
-
-### --columns
-
-Argument: comma-separated 1-based column numbers
-Effect: show only these columns
-
-### --hide-columns
-
-Argument: comma-separated 1-based column numbers
-Effect: hide these columns (cannot be combined with `--columns`)
-
-### --freeze
-
-Short: `-f`
-Argument: `-1` none, `0` header row and first column, `1` header row only,
-    `2` first column only
-Default: `0`
-
-### --strict
-
-Effect: fail when a row has a different number of columns than the header
-
-### --async
-
-Default: `true`
-Effect: render progressively while loading; `--async=false` loads everything
-    first and prints progress to the terminal
-
-### --memory
-
-Short: `-m`
-Argument: limit in MB; `0` means unlimited
-Default: `0`
-Effect: stop loading when the estimated memory use reaches the limit; the rows
-    loaded so far stay viewable and the footer says why loading stopped
-
-### --theme
-
-Argument: name of a built-in colour scheme
-Default: the `name` in the config file, else `subcore`
-Effect: selects the colours the table, footer and dialogs use; the list of
-    schemes is shown in `--help`
-
-### --config
-
-Argument: path to a config file
-Default: `~/.config/ttv/config.toml` (`$XDG_CONFIG_HOME/ttv/config.toml`)
-Effect: loads key bindings and colours; a missing default file is ignored, a
-    missing named file is an error
-
-### --dump-config
-
-Effect: prints the default configuration with comments and exits; save it as
-    the config file and edit
-
-### --help, --version
-
-Short: `-h`, `-v`
+- `-s`, `--separator <char>`: the delimiter; use `\t` for tab. By default it
+  is detected from the first lines, with `.csv` and `.tsv` suffixes as a hint.
+- `-n`, `--lines <N>`: load only the first N lines.
+- `--skip-prefix <p1,p2,...>`: skip lines starting with any of the prefixes.
+- `--skip-lines <N>`: skip the first N lines.
+- `--columns <1,3,...>`: show only these columns (1-based).
+- `--hide-columns <2,4,...>`: hide these columns (1-based; cannot be combined
+  with `--columns`).
+- `-f`, `--freeze <mode>`: `-1` none, `0` header row and first column
+  (default), `1` header row only, `2` first column only.
+- `--strict`: fail when a row has a different number of columns than the
+  header.
+- `--async` (default `true`): render progressively while loading;
+  `--async=false` loads everything first and prints progress to the terminal.
+- `-m`, `--memory <MB>`: stop loading when the estimated memory use reaches
+  the limit (`0`, the default, means unlimited); the rows loaded so far stay
+  viewable and the footer says why loading stopped.
+- `--theme <name>`: a built-in colour scheme (the list is in `--help`); the
+  default is the `name` in the config file, else `subcore`.
+- `--config <path>`: the config file with key bindings and colours; the
+  default is `~/.config/ttv/config.toml` (`$XDG_CONFIG_HOME/ttv/config.toml`).
+  A missing default file is ignored, a missing named file is an error.
+- `--dump-config`: print the default configuration with comments and exit;
+  save it as the config file and edit.
+- `-h`, `--help` and `-v`, `--version`.
 
 ## Key Bindings
 
@@ -232,83 +177,100 @@ shows the bindings that are active.
 
 ### Movement
 
-h, Left: move left; wraps to the last column from the first
-l, Right: move right; wraps to the first column from the last
-j, Down: move down
-k, Up: move up
-w: next column
-b: previous column
-gg: first row
-G: last row
-0, ^: first column (a stray `0` while typing a count jumps here; unbind
-    `0` from `first_column` in the config if that bites)
-$: last column
-Ctrl-d: half a page down
-Ctrl-u: half a page up
-PgDn, Ctrl-f: a page down
-PgUp, Ctrl-b: a page up
-Home, End: first or last row
-N followed by a motion: repeat it N times, as in vim (`5j`, `3l`, `2w`,
-    `4n`); `NG` or `Ngg` jumps to row N and `N Ctrl-d` or `N Ctrl-u` moves N
-    rows. `0` on its own still goes to the first column.
-Vertical motions stop at the first data row; the frozen header is never
-    selected, and an overshooting count such as `200k` in a 150-row file lands
-    on the first row.
+- `h`, `Left`: move left; wraps to the last column from the first
+- `l`, `Right`: move right; wraps to the first column from the last
+- `j`, `Down`: move down
+- `k`, `Up`: move up
+- `w`: next column
+- `b`: previous column
+- `gg`: first row
+- `G`: last row
+- `0`, `^`: first column (a stray `0` while typing a count jumps here;
+  unbind `0` from `first_column` in the config if that bites)
+- `$`: last column
+- `Ctrl-d`: half a page down
+- `Ctrl-u`: half a page up
+- `PgDn`, `Ctrl-f`: a page down
+- `PgUp`, `Ctrl-b`: a page up
+- `Home`, `End`: first or last row
 
-### Operations
+Counts work as in vim: a number before a motion repeats it (`5j`, `3l`, `2w`,
+`4n`), `NG` or `Ngg` jumps to row N, and `N Ctrl-d` or `N Ctrl-u` moves N
+rows. `0` on its own still goes to the first column. Vertical motions stop at
+the first data row; the frozen header is never selected, and an overshooting
+count such as `200k` in a 150-row file lands on the first row. Vertical
+motions keep the horizontal scroll where it was.
 
-/: search
-n: next search result
-N: previous search result
-Esc: clear search highlighting, or close the open dialog
-f: filter by the current column
-r: remove the filter on the current column
-s: sort ascending by the current column (an edit: `u` undoes it)
-S: sort descending by the current column
-t: toggle the column type (String, Number, Date)
-_: toggle the width limit on the current column
-zc, zo, za, zR: hide the current column behind a narrow marker (like a
-    closed fold), show it again, toggle, show all hidden columns; in visual
-    mode `zc` and `zo` act on the selected columns
-y: copy the current cell to the clipboard
-Y: copy the current row to the clipboard, cells separated by tabs
-v, Ctrl-v: visual mode; select a block of cells from here to the cursor
-V: visual line mode; select whole rows
-o: in visual mode, swap the anchor and the cursor
-I: statistics for the current column
-?: help
-q: quit; asks whether to write or discard pending edits
+### Search and filter
+
+- `/`: search
+- `n`: next search result
+- `N`: previous search result
+- `Esc`: clear search highlighting, or close the open dialog
+- `f`: filter by the current column
+- `r`: remove the filter on the current column
+
+### Sort and types
+
+- `s`: sort ascending by the current column (an edit: `u` undoes it)
+- `S`: sort descending by the current column
+- `t`: toggle the column type (String, Number, Date)
+
+### Yank and paste
+
+- `y`: copy the current cell to the clipboard
+- `Y`: copy the current row to the clipboard, cells separated by tabs
+- `p`, `P`: paste the last yank or removal over the cell; a block is laid out
+  from the cursor, in visual mode a single value fills the selection
+
+### Visual mode
+
+- `v`, `Ctrl-v`: visual mode; select a block of cells from here to the cursor
+- `V`: visual line mode; select whole rows
+- `o`: swap the anchor and the cursor
 
 ### Editing
 
-dd: remove the current row; `3dd` removes three
-d + motion: remove the rows a vertical motion spans (`dj`, `d3j`, `dG`,
-    `dgg`) or the columns a horizontal one spans (`dl`, `dh`, `d$`, `d0`)
-d in visual mode: remove the selected rows (`V`) or columns (`v`)
-x: clear the cell; with a count, N cells to the right; in visual mode
-    every selected cell
-X: remove and copy to the clipboard: the current row, or the visual
-    selection
-E: edit the cell in a vim line editor (see [Editing](#editing-1))
-i, Ctrl-I, a: edit the cell, inserting at the start or appending at the end;
-    in visual mode the text goes into every selected cell
-cc: clear the cell and type its new value; in visual mode every selected
-    cell gets it
-p, P: paste the last yank or removal over the cell; a block is laid out from
-    the cursor, in visual mode a single value fills the selection
-ir, or: insert an empty row above or below the cursor (with a count, N rows)
-    and start typing in it; in visual mode around the selection
-ic, oc: insert an empty column left or right of the cursor (with a count, N
-    columns) and name it in the header; in visual mode around the selection
-u: undo the last edit; with a count, N edits
-W: write the table back to the file
+- `dd`: remove the current row; `3dd` removes three
+- `d` + motion: remove the rows a vertical motion spans (`dj`, `d3j`, `dG`,
+  `dgg`) or the columns a horizontal one spans (`dl`, `dh`, `d$`, `d0`)
+- `d` in visual mode: remove the selected rows (`V`) or columns (`v`)
+- `x`: clear the cell; with a count, N cells to the right; in visual mode
+  every selected cell
+- `X`: remove and copy to the clipboard: the current row, or the visual
+  selection
+- `E`: edit the cell in a vim line editor (see [Editing](#editing-1))
+- `i`, `Ctrl-I`, `a`: edit the cell, inserting at the start or appending at
+  the end; in visual mode the text goes into every selected cell
+- `cc`: clear the cell and type its new value; in visual mode every selected
+  cell gets it
+- `ir`, `or`: insert an empty row above or below the cursor (with a count, N
+  rows) and start typing in it; in visual mode around the selection
+- `ic`, `oc`: insert an empty column left or right of the cursor (with a
+  count, N columns) and name it in the header; in visual mode around the
+  selection
+- `u`: undo the last edit; with a count, N edits
+- `W`: write the table back to the file
+
+### View
+
+- `_`: toggle the width limit on the current column
+- `zc`: hide the current column behind a narrow marker, like a closed fold;
+  in visual mode the selected columns
+- `zo`: show the hidden column under the cursor again; in visual mode the
+  selected columns
+- `za`: hide the current column, or show it when hidden
+- `zR`: show every hidden column
+- `I`: statistics for the current column
+- `?`: help
+- `q`: quit; asks whether to write or discard pending edits
 
 ### Mouse
 
-Left click: select the cell under the pointer
-Scroll wheel: move the selection up or down one row
-Click on buttons and checkboxes: works in the search, filter and statistics
-    dialogs
+- Left click: select the cell under the pointer
+- Scroll wheel: move the selection up or down one row
+- Click on buttons and checkboxes: works in the search, filter and statistics
+  dialogs
 
 Mouse support depends on the terminal; keyboard navigation always works.
 
@@ -330,22 +292,22 @@ TTV samples each column after loading and classifies it as String, Number or
 Date when at least 90% of the sampled non-empty cells fit. Press `t` to cycle
 the type by hand, then `s` or `S` to sort.
 
-Strings: byte-wise order
-Numbers: numeric order; integers, floats, scientific notation and thousands
-    separators (`1,234.5`, `1_234`) are accepted; cells that do not parse sort
-    as zero
-Dates: chronological; ISO-8601 (`2024-10-17`, with optional time and zone),
-    US (`10/17/2024`), EU (`17/10/2024`), `2024/10/17`, `2024.10.17`,
-    `Jan 02, 2006`, `January 02, 2006`, `02-Jan-2006` and `02 Jan 2006`
+- Strings: byte-wise order
+- Numbers: numeric order; integers, floats, scientific notation and thousands
+  separators (`1,234.5`, `1_234`) are accepted; cells that do not parse sort
+  as zero
+- Dates: chronological; ISO-8601 (`2024-10-17`, with optional time and zone),
+  US (`10/17/2024`), EU (`17/10/2024`), `2024/10/17`, `2024.10.17`,
+  `Jan 02, 2006`, `January 02, 2006`, `02-Jan-2006` and `02 Jan 2006`
 
 ### Statistics and plots
 
-Press `i` on a column to open the statistics dialog.
+Press `I` on a column to open the statistics dialog.
 
-Numeric columns: count, min, max, range, sum, mean, median, mode, standard
-    deviation, variance, quartiles and IQR, plus a histogram
-String and date columns: total, unique and empty counts, the frequency of each
-    value with percentages, plus a bar chart of the 15 most frequent values
+- Numeric columns: count, min, max, range, sum, mean, median, mode, standard
+  deviation, variance, quartiles and IQR, plus a histogram
+- String and date columns: total, unique and empty counts, the frequency of
+  each value with percentages, plus a bar chart of the 15 most frequent values
 
 When filters are active, statistics are computed on the filtered rows only
 and the dialog title says so.
@@ -362,8 +324,9 @@ and the dialog title says so.
 Plain text search is a case-insensitive substring match unless
 `Case Sensitive` is checked. Regex search uses Go regular expression syntax
 and is case-insensitive unless `Case Sensitive` is checked (TTV prepends
-`(?i)` for you). The current match is highlighted in cyan, other matches in
-grey, and the footer shows the position such as `Match 3/12`.
+`(?i)` for you). The current match is highlighted in the accent colour, other
+matches in the panel colour, and the footer shows the position such as
+`Match 3/12`.
 
 Regex examples:
 
@@ -389,20 +352,20 @@ strip above the footer describes the filter on the current column.
 
 Operators:
 
-contains: the cell contains the value
-equals: the cell equals the value
-starts with: the cell starts with the value
-ends with: the cell ends with the value
-regex: the cell matches the regular expression
-Comparison (`>`, `<`, `>=`, `<=`): numeric comparison on any column; cells
-    that do not parse as numbers never match. On a column typed as Date the
-    comparison is chronological and the value must be a date in one of the
-    formats listed above.
-unique: keeps the first row for each distinct value in the column and drops
-    the rest, so 200 rows with 12 distinct values in the column become 12
-    rows; the value field is ignored
-unique rows: keeps the first of each set of rows that are identical in every
-    column
+- `contains`: the cell contains the value
+- `equals`: the cell equals the value
+- `starts with`: the cell starts with the value
+- `ends with`: the cell ends with the value
+- `regex`: the cell matches the regular expression
+- `>`, `<`, `>=`, `<=`: numeric comparison on any column; cells that do not
+  parse as numbers never match. On a column typed as Date the comparison is
+  chronological and the value must be a date in one of the formats listed
+  above.
+- `unique`: keeps the first row for each distinct value in the column and
+  drops the rest, so 200 rows with 12 distinct values in the column become 12
+  rows; the value field is ignored
+- `unique rows`: keeps the first of each set of rows that are identical in
+  every column
 
 Text operators and both unique operators are case-insensitive unless
 `Case Sensitive` is checked. An invalid regex or a non-numeric threshold
@@ -419,14 +382,15 @@ TTV detects the clipboard of the system it runs on and also sends the OSC 52
 terminal escape (tmux forwards it when `set -g set-clipboard on` is set;
 payloads over 1MB skip it). The footer reports which channels were used.
 
-Windows and WSL: the Windows clipboard through `cmd.exe /c chcp 65001 & clip`,
-    so non-ASCII text survives; plain `clip.exe` if `cmd.exe` is missing
-macOS: `pbcopy`
-Linux on Wayland: `wl-copy` (wl-clipboard)
-Linux on X11: `xclip`, else `xsel`
-Termux: `termux-clipboard-set`
-Anything else: the first of those that is installed, else OSC 52 alone, in
-    which case the footer says the copy could not be verified
+- Windows and WSL: the Windows clipboard through
+  `cmd.exe /c chcp 65001 & clip`, so non-ASCII text survives; plain
+  `clip.exe` if `cmd.exe` is missing
+- macOS: `pbcopy`
+- Linux on Wayland: `wl-copy` (wl-clipboard)
+- Linux on X11: `xclip`, else `xsel`
+- Termux: `termux-clipboard-set`
+- Anything else: the first of those that is installed, else OSC 52 alone, in
+  which case the footer says the copy could not be verified
 
 To use another program, set `command` in the `[clipboard]` section of the
 config file to anything that reads the text on stdin; `osc52 = false` turns
@@ -449,92 +413,125 @@ Editing works like fdisk: every change is staged in memory and the file is
 only touched when you press `W`. The footer marks the file `[+]` while edits
 are pending and sums them up after each one ("1 column (Age) and 3 rows
 removed, 2 cells changed, sorted by Age ascending"). `u` undoes edits one at
-a time, structural ones included, and `q` (or Ctrl-C) asks whether to write,
-discard or stay while edits are pending (`w`, `d`, `c` or Esc answer directly;
-Tab moves between the buttons, the bright one is selected).
+a time, structural ones included.
 
-Rows and columns: `d` is vim's operator. `dd` removes the current row;
-    `dj`, `d3j`, `dG` and `dgg` remove the rows a vertical motion spans;
-    `dl`, `dh`, `d$` and `d0` remove the columns a horizontal one spans, with
-    vim's rules (no wrap-around, `dh` in the first column does nothing).
-    In visual mode `d` removes the selected rows (`V`) or columns (`v`).
-    Counts multiply as in vim: `2d3j` moves six rows down and removes seven,
-    `2dG` removes from row 2 to the cursor. The last row and the last column
-    cannot be removed.
-Cut: `X` copies before it removes (the current row, or the visual selection;
-    whole columns are copied with every row of the table) and leaves the
-    table alone if no clipboard channel accepted the text.
-Cells: `x` clears the cell under the cursor (`3x` three cells; in visual mode
-    every selected cell). `E` opens the cell in a line editor that behaves
-    like a vim line: `h l 0 ^ $ | w b e W B E f F t T ; ,` motions with
-    counts; `d c y` with motions or text objects (`iw aw iW aW`, `i"`, `a'`,
-    `i(`, `a[`, `i{`, `i<`); `dd cc yy D C Y`; `x X s S r ~ p P`; `u` and
-    `Ctrl-r`; `.` to repeat the last change; `v` for a charwise selection
-    with `o d c y x ~ u U r p`; `R` to replace; `i a I A` to insert. In
-    insert mode Backspace, Delete, the arrows, Home, End, Ctrl-w and Ctrl-u
-    work as usual. Enter applies the value; Esc in normal mode cancels, as on
-    vim's command line; a vertical table motion in normal mode (`j`, `k`,
-    `G`, paging) applies the value and moves to that cell, so `i`, text,
-    `Esc`, `j` edits a cell and steps to the next. `i` and `a` open the cell
-    straight in insert mode, `cc` clears it first. The register and `.` carry
-    over from cell to cell.
-    The cursor moves by code point: combining marks are drawn with their base
-    character but count as positions of their own. Ctrl-C in the editor acts
-    as Esc.
-Bulk edit: in visual mode `i` (or Ctrl-I), `a` and `cc` work like vim's
-    block insert. The editor opens on the first selected cell; what you type
-    is inserted at the start (`i`), appended (`a`) or replaces the value
-    (`cc`) in every selected cell when you press Esc or Enter, as one undo
-    step. Select five empty cells with `Ctrl-v`, press `Ctrl-I`, type, Esc:
-    all five hold the text.
-Adding: `ir` and `or` insert an empty row above or below the cursor, `ic`
-    and `oc` an empty column left or right, following sc-im (vim's `i` is
-    before, `o` after). The cursor moves to the new row, whose cell opens in
-    insert mode, or to the new column, whose header opens for its name (Esc
-    leaves it unnamed). Counts add several. `u` removes them again. Rows
-    cannot be inserted while a filter is active, since they would not be
-    visible. Because `i` and `o` are also commands of their own, they wait
-    half a second for the second key, as vim does with `timeoutlen`.
-Paste: `y`, `Y`, a visual yank, `X` and `d` also fill an in-app register
-    (the system clipboard is never read). `p` or `P` replaces the cell under
-    the cursor with it; a yanked block is laid out from the cursor and clipped
-    to the table; in visual mode a single value fills every selected cell.
-    Text yanked inside the cell editor pastes into a cell the same way. `x`
-    does not touch the register, so a yanked value survives clearing cells.
-Filters: an edit made in a filtered view changes the unfiltered table too. A
-    removed column takes its filter and width limit with it, and `u` brings
-    them back. Sorting is an edit as well: it applies to the whole table, is
-    written by `W`, and `u` restores the previous order.
-Writing: `W` replaces the file atomically (a temporary file next to it,
-    renamed into place, permissions kept; symlinks are followed; `.gz` files
-    stay gzip). Fields are quoted only when they contain the separator, a
-    quote or a line break, so TSV and pipe files keep their look; blank lines
-    dropped on load are not written back, and line endings become LF. `W` is
-    refused when the table is not the whole file: input from a pipe,
-    `--lines`, `--skip-lines`, `--skip-prefix`, `--columns` or
-    `--hide-columns`, a load that stopped early, or ragged rows padded with
-    NaN (load with `--strict` to reject them); and when the file changed on
-    disk since it was loaded, is read-only, or has other hard links.
-Backups: before the file is replaced, a private copy of its previous version
-    goes to the backup directory (see [backup] under
-    [Configuration](#configuration)), so a bad edit can be recovered by
-    hand. The footer names the copy after each write.
+`q` (or Ctrl-C) asks whether to write, discard or stay while edits are
+pending. `w`, `d`, `c` or Esc answer directly; Tab moves between the buttons,
+and the bright one is the one Enter will press.
 
-Deliberate deviations from vim in the table: `x` clears content instead of
-being `dl` (as in sc-im, the vim spreadsheet), `X` cuts to the clipboard, `W`
-writes and `I` shows statistics. The line editor's keys are vim's and are not
-remappable; the table keys are.
+#### Rows and columns
+
+`d` is vim's operator:
+
+- `dd` removes the current row; `3dd` three.
+- `dj`, `d3j`, `dG` and `dgg` remove the rows a vertical motion spans.
+- `dl`, `dh`, `d$` and `d0` remove the columns a horizontal motion spans, with
+  vim's rules: no wrap-around, and `dh` in the first column does nothing.
+- In visual mode `d` removes the selected rows (`V`) or columns (`v`).
+- Counts multiply as in vim: `2d3j` moves six rows down and removes seven,
+  `2dG` removes from row 2 to the cursor.
+- The last row and the last column cannot be removed.
+
+`X` cuts: it copies before it removes (the current row, or the visual
+selection; whole columns are copied with every row of the table) and leaves
+the table alone if no clipboard channel accepted the text.
+
+#### Adding rows and columns
+
+`ir` and `or` insert an empty row above or below the cursor, `ic` and `oc` an
+empty column left or right, following sc-im (vim's `i` is before, `o` after).
+The cursor moves to the new row, whose cell opens in insert mode, or to the
+new column, whose header opens for its name (Esc leaves it unnamed). Counts
+add several. `u` removes them again. Rows cannot be inserted while a filter
+is active, since they would not be visible. Because `i` and `o` are also
+commands of their own, they wait half a second for the second key, as vim
+does with `timeoutlen`.
+
+#### Cells and the line editor
+
+`x` clears the cell under the cursor (`3x` three cells; in visual mode every
+selected cell). `E` opens the cell in a line editor that behaves like a vim
+line; `i` and `a` open it straight in insert mode, `cc` clears it first.
+
+- Motions: `h l 0 ^ $ | w b e W B E f F t T ; ,`, with counts.
+- Operators: `d c y` with motions or text objects (`iw aw iW aW`, `i"`,
+  `a'`, `i(`, `a[`, `i{`, `i<`); `dd cc yy D C Y`.
+- Commands: `x X s S r ~ p P`; `u` and `Ctrl-r`; `.` repeats the last change;
+  `R` replaces; `i a I A` insert.
+- Visual: `v` selects characters, then `o d c y x ~ u U r p`.
+- Insert mode: Backspace, Delete, the arrows, Home, End, Ctrl-w and Ctrl-u
+  work as usual.
+- Leaving: Enter applies the value. Esc in normal mode cancels, as on vim's
+  command line. A vertical table motion in normal mode (`j`, `k`, `G`,
+  paging) applies the value and moves to that cell, so `i`, text, `Esc`, `j`
+  edits a cell and steps to the next. Ctrl-C acts as Esc.
+- The register and `.` carry over from cell to cell. The cursor moves by
+  code point: combining marks are drawn with their base character but count
+  as positions of their own.
+
+#### Bulk edit
+
+In visual mode `i` (or Ctrl-I), `a` and `cc` work like vim's block insert.
+The editor opens on the first selected cell; what you type is inserted at the
+start (`i`), appended (`a`) or replaces the value (`cc`) in every selected
+cell when you press Esc or Enter, as one undo step. Select five empty cells
+with `Ctrl-v`, press `Ctrl-I`, type, Esc: all five hold the text.
+
+#### Paste
+
+`y`, `Y`, a visual yank, `X` and `d` also fill an in-app register (the system
+clipboard is never read). `p` or `P` replaces the cell under the cursor with
+it; a yanked block is laid out from the cursor and clipped to the table; in
+visual mode a single value fills every selected cell. Text yanked inside the
+cell editor pastes into a cell the same way. `x` does not touch the register,
+so a yanked value survives clearing cells.
+
+#### Filters and sorting
+
+An edit made in a filtered view changes the unfiltered table too. A removed
+column takes its filter and width limit with it, and `u` brings them back.
+Sorting is an edit as well: it applies to the whole table, is written by `W`,
+and `u` restores the previous order.
+
+#### Writing and backups
+
+`W` replaces the file atomically: a temporary file next to it, renamed into
+place, permissions kept; symlinks are followed; `.gz` files stay gzip. Fields
+are quoted only when they contain the separator, a quote or a line break, so
+TSV and pipe files keep their look; blank lines dropped on load are not
+written back, and line endings become LF.
+
+`W` is refused when the table is not the whole file:
+
+- input from a pipe
+- `--lines`, `--skip-lines`, `--skip-prefix`, `--columns` or `--hide-columns`
+- a load that stopped early
+- ragged rows padded with NaN (load with `--strict` to reject them)
+- the file changed on disk since it was loaded, is read-only, or has other
+  hard links
+
+Before the file is replaced, a private copy of its previous version goes to
+the backup directory (see [backup] under [Configuration](#configuration)), so
+a bad edit can be recovered by hand. The footer names the copy after each
+write.
+
+#### Deviations from vim
+
+In the table, `x` clears content instead of being `dl` (as in sc-im, the vim
+spreadsheet), `X` cuts to the clipboard, `W` writes and `I` shows statistics.
+The line editor's keys are vim's and are not remappable; the table keys are.
 
 ### Hiding columns
 
 `zc` hides the column under the cursor (in visual mode the selected columns)
 the way vim closes a fold: the column collapses to a one-character dimmed
-marker (`»`) so its place stays visible; while the cursor is on it, the
-footer names it and the preview box shows the column name and the cell's
-value, whether or not it would fit. `zo` shows it again, `za` toggles, `zR` shows every hidden
-column. Editing a cell in a hidden column opens it first. At least one column
-always stays visible. Hiding is a view setting: it is not written by `W`, not
-undone by `u`, and it follows its column when columns are removed or added.
+marker (`»`) so its place stays visible. While the cursor is on it, the footer
+names it and the preview box shows the column name and the cell's value,
+whether or not it would fit. `zo` shows it again, `za` toggles, `zR` shows
+every hidden column. Editing a cell in a hidden column opens it first. At
+least one column always stays visible. Hiding is a view setting: it is not
+written by `W`, not undone by `u`, and it follows its column when columns are
+removed or added.
 
 ### Column width limits
 
@@ -578,7 +575,8 @@ ttv data.txt -s ";"                            # semicolon-delimited
 
 TTV reads `~/.config/ttv/config.toml` if it exists (or the file named with
 `--config`). `ttv --dump-config` prints the defaults with comments; save that
-output as the config file and edit what you want to change.
+output as the config file and edit what you want to change. Unknown keys are
+reported at startup, so a typo cannot silently keep a default.
 
 ### [keys]
 
@@ -588,26 +586,31 @@ rejected in bindings; `0` may be bound and is the default for `first_column`.
 Keys that are bound to nothing do nothing: tview's own table bindings are
 never reached, so unbinding `cancel` simply disables Escape.
 
-Key spellings: a single character such as `h`, `G` or `$`; a name from `esc`,
-    `enter`, `tab`, `space`, `left`, `right`, `up`, `down`, `home`, `end`,
-    `pgup`, `pgdn`, `f1` to `f12`; a modifier form such as `ctrl+d`, `alt+x`
-    or `shift+v`
-Sequences: a quoted string with spaces is a multi-key chord, for example
-    `first_row = "g g"`
-Validation: a key bound to two actions is rejected at startup with a message
-    naming both. A key that is also the start of a longer chord (`i` and
-    `i c`) is allowed: it waits half a second for the next key, as vim's
-    `timeoutlen` does, and runs on its own when none comes
-Actions: `move_left`, `move_right`, `move_down`, `move_up`, `next_column`,
-    `prev_column`, `first_row`, `last_row`, `first_column`, `last_column`,
-    `half_page_down`, `half_page_up`, `page_down`, `page_up`, `search`,
-    `next_match`, `prev_match`,
-    `cancel`, `filter`, `remove_filter`, `sort_asc`, `sort_desc`,
-    `toggle_type`, `yank`, `yank_row`, `visual`, `visual_row`,
-    `visual_swap`, `delete`, `cut`, `clear`, `edit`, `insert`, `append`,
-    `change`, `paste`, `insert_row`, `open_row`, `insert_column`,
-    `open_column`, `undo`, `write`, `toggle_width`, `fold_column`,
-    `unfold_column`, `toggle_fold`, `unfold_all`, `stats`, `help`, `quit`
+- Key spellings: a single character such as `h`, `G` or `$`; a name from
+  `esc`, `enter`, `tab`, `space`, `left`, `right`, `up`, `down`, `home`,
+  `end`, `pgup`, `pgdn`, `f1` to `f12`; a modifier form such as `ctrl+d`,
+  `alt+x` or `shift+v`.
+- Sequences: a quoted string with spaces is a multi-key chord, for example
+  `first_row = "g g"`.
+- Validation: a key bound to two actions is rejected at startup with a
+  message naming both. A key that is also the start of a longer chord (`i`
+  and `i c`) is allowed: it waits half a second for the next key, as vim's
+  `timeoutlen` does, and runs on its own when none comes.
+
+Actions, by section of the help dialog:
+
+- Movement: `move_left`, `move_right`, `move_down`, `move_up`,
+  `next_column`, `prev_column`, `first_row`, `last_row`, `first_column`,
+  `last_column`, `half_page_down`, `half_page_up`, `page_down`, `page_up`
+- Search and filter: `search`, `next_match`, `prev_match`, `cancel`,
+  `filter`, `remove_filter`
+- Sort and types: `sort_asc`, `sort_desc`, `toggle_type`
+- Yank and visual: `yank`, `yank_row`, `visual`, `visual_row`, `visual_swap`
+- Edit: `delete`, `cut`, `clear`, `edit`, `insert`, `append`, `change`,
+  `paste`, `insert_row`, `open_row`, `insert_column`, `open_column`, `undo`,
+  `write`
+- View: `toggle_width`, `fold_column`, `unfold_column`, `toggle_fold`,
+  `unfold_all`, `stats`, `help`, `quit`
 
 ```toml
 [keys]
@@ -623,9 +626,21 @@ stats      = []          # unbound
 one colour role. Colours are `colour<n>` (an xterm-256 palette index, as in
 tmux), `#rrggbb`, or a name such as `red`.
 
-Roles: `background`, `text`, `dim`, `panel`, `stripe`, `border`, `accent`,
-    `alert`, `selection`, `cursorline` (the row under the cursor, tinted so
-    it can be followed across a wide table)
+Roles:
+
+- `background`: window and cell background
+- `text`: default text
+- `dim`: secondary text such as the footer position and hints, and the fold
+  marker of hidden columns
+- `panel`: raised surfaces such as the header row and input fields
+- `stripe`: alternate rows in the statistics table
+- `border`: table separators
+- `accent`: the cursor, the frozen column, the footer file name, dialog
+  borders and keys
+- `alert`: active filters and the filter strip
+- `selection`: the background of cells inside a visual selection
+- `cursorline`: the row under the cursor, tinted so it can be followed across
+  a wide table
 
 ```toml
 [theme]
@@ -636,9 +651,9 @@ alert      = "#ff5f5f"
 
 ### [preview]
 
-position: `bottom` (default) and `top` centre the full-value box at the
-    bottom of the table or under the header; `cursor` lays it over the
-    selected cell
+- `position`: `bottom` (default) and `top` centre the full-value box at the
+  bottom of the table or under the header; `cursor` lays it over the
+  selected cell.
 
 ```toml
 [preview]
@@ -647,9 +662,10 @@ position = "cursor"
 
 ### [clipboard]
 
-command: a program that reads the text to copy on stdin, replacing the
-    automatic detection, for example `xclip -selection clipboard`
-osc52: `true` (default) or `false`; whether to also send the OSC 52 escape
+- `command`: a program that reads the text to copy on stdin, replacing the
+  automatic detection, for example `xclip -selection clipboard`.
+- `osc52`: `true` (default) or `false`; whether to also send the OSC 52
+  escape.
 
 ```toml
 [clipboard]
@@ -666,11 +682,12 @@ the real file with a short hash of its full path so same-named files in
 different directories do not mix. The oldest copies of a file are pruned
 beyond `keep`.
 
-enabled: keep a backup on every write; default `true`
-dir: the directory; empty means `$XDG_STATE_HOME/ttv/backup`
-    (`~/.local/state/ttv/backup`; the local application data directory on
-    Windows). `~` is expanded and relative paths are resolved at startup.
-keep: how many backups of one file to keep; default 20, `0` keeps them all
+- `enabled`: keep a backup on every write; default `true`.
+- `dir`: the directory; empty means `$XDG_STATE_HOME/ttv/backup`
+  (`~/.local/state/ttv/backup`; the local application data directory on
+  Windows). `~` is expanded and relative paths are resolved at startup.
+- `keep`: how many backups of one file to keep; default 20, `0` keeps them
+  all.
 
 ```toml
 [backup]
@@ -717,10 +734,10 @@ scheme, in the `[theme]` section of the config file without touching code.
 
 ### Layout
 
-cmd/ttv: the executable; holds the build version and calls the app
-internal/app: the application: loaders, the table model with filters and
-    sorting, statistics and the tview user interface
-internal/app/testdata: fixture files used by the tests
+- `cmd/ttv`: the executable; holds the build version and calls the app
+- `internal/app`: the application: loaders, the table model with filters and
+  sorting, statistics and the tview user interface
+- `internal/app/testdata`: fixture files used by the tests
 
 ## Credits
 
