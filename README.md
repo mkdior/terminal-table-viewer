@@ -444,8 +444,9 @@ Rows and columns: `d` is vim's operator. `dd` removes the current row;
     `dl`, `dh`, `d$` and `d0` remove the columns a horizontal one spans, with
     vim's rules (no wrap-around, `dh` in the first column does nothing).
     In visual mode `d` removes the selected rows (`V`) or columns (`v`).
-    Counts multiply: `2d3j` removes six rows. The last row and the last
-    column cannot be removed.
+    Counts multiply as in vim: `2d3j` moves six rows down and removes seven,
+    `2dG` removes from row 2 to the cursor. The last row and the last column
+    cannot be removed.
 Cut: `X` copies before it removes (the current row, or the visual selection;
     whole columns are copied with every row of the table) and leaves the
     table alone if no clipboard channel accepted the text.
@@ -460,6 +461,9 @@ Cells: `x` clears the cell under the cursor (`3x` three cells; in visual mode
     work as usual. Enter applies the value; Esc in normal mode cancels, as on
     vim's command line. `i` and `a` open the cell straight in insert mode,
     `cc` clears it first. The register and `.` carry over from cell to cell.
+    The cursor moves by code point: combining marks are drawn with their base
+    character but count as positions of their own. Ctrl-C in the editor acts
+    as Esc.
 Filters: an edit made in a filtered view changes the unfiltered table too. A
     removed column takes its filter and width limit with it, and `u` brings
     them back. Sorting is an edit as well: it applies to the whole table, is
