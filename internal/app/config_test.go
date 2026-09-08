@@ -135,6 +135,13 @@ func TestLoadConfigMissingFile(t *testing.T) {
 	if err != nil || len(cfg.Keys["quit"]) != 1 || cfg.Keys["quit"][0] != "x" {
 		t.Errorf("loadConfig = %+v, %v", cfg, err)
 	}
+	// A misspelt key must not be ignored: enable is not enabled.
+	if err := os.WriteFile(path, []byte("[backup]\nenable = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(path, true); err == nil || !strings.Contains(err.Error(), "unknown key backup.enable") {
+		t.Errorf("unknown keys must be reported, got %v", err)
+	}
 }
 
 func TestParseColor(t *testing.T) {

@@ -332,8 +332,15 @@ func TestQuitPromptsWhenDirty(t *testing.T) {
 
 func TestBackupNameAndPaths(t *testing.T) {
 	a, b2 := backupName("/x/data.csv"), backupName("/y/data.csv")
-	if !strings.HasPrefix(a, "data.csv.") || a == b2 || len(a) != len("data.csv.")+8 {
+	if !strings.HasPrefix(a, "data.csv.") || a == b2 || len(a) != len("data.csv.")+16 {
 		t.Errorf("backupName: %q %q", a, b2)
+	}
+	long := strings.Repeat("n", 240) + ".csv"
+	if got := backupName("/x/" + long); len(got) != maxBackupBase+1+16 {
+		t.Errorf("a long base name must be cut: %d", len(got))
+	}
+	if strings.HasPrefix(backupTempPrefix, "data.csv") {
+		t.Error("temp names must never look like backups")
 	}
 	home, _ := os.UserHomeDir()
 	if got := tildePath(filepath.Join(home, "x", "y")); got != filepath.Join("~", "x", "y") {
@@ -350,7 +357,55 @@ func TestBackupNameAndPaths(t *testing.T) {
 	}
 	t.Setenv("XDG_STATE_HOME", "/tmp/state")
 	backupDirOverride = ""
-	if dir, _ := backupDir(); dir != filepath.Join("/tmp/state", "ttv", "backup") {
-		t.Errorf("backupDir = %q", dir)
+	if dir, isDefault, _ := backupDir(); dir != filepath.Join("/tmp/state", "ttv", "backup") || !isDefault {
+		t.Errorf("backupDir = %q default=%v", dir, isDefault)
+	}
+	t.Setenv("XDG_STATE_HOME", "relative/state") // invalid per the XDG spec: ignored
+	if dir, _, _ := backupDir(); strings.Contains(dir, "relative") {
+		t.Errorf("a relative XDG_STATE_HOME must be ignored, got %q", dir)
+	}
+	backupDirOverride = "/custom/dir"
+	if dir, isDefault, _ := backupDir(); dir != "/custom/dir" || isDefault {
+		t.Errorf("configured dir = %q default=%v", dir, isDefault)
+	}
+}
+
+func TestBackupLeavesTempFilesAloneAndPrunesAfterCommit(t *testing.T) {
+	setupWriteTable(t, "a,b\n1,2\n3,4\n")
+	backupKeep = 1
+	if err := os.MkdirAll(backupDirOverride, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stray := filepath.Join(backupDirOverride, backupTempPrefix+"leftover")
+	if err := os.WriteFile(stray, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	press(t, "d d W")
+	press(t, "l d l W")
+	entries, _ := os.ReadDir(backupDirOverride)
+	names := []string{}
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if len(names) != 2 || !strings.Contains(strings.Join(names, " "), backupTempPrefix+"leftover") {
+		t.Errorf("keep=1 leaves the newest backup and never touches temp files: %v", names)
+	}
+	for _, n := range names {
+		if strings.HasPrefix(n, "data.csv.") && !strings.Contains(n, time.Now().Format("20060102")) {
+			t.Errorf("backup name %q", n)
+		}
+	}
+	// The directory is private even when it existed with looser permissions.
+	if err := os.Chmod(backupDirOverride, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	backupDirOverride = "" // default location: the leaf is ours to tighten
+	t.Setenv("XDG_STATE_HOME", filepath.Dir(filepath.Dir(filepath.Dir(stray))))
+	dir, _, _ := backupDir()
+	_ = os.MkdirAll(dir, 0o755)
+	edits = append(edits, edit{cells: []cellChange{{b.cont[1], 0, "1"}}})
+	press(t, "W")
+	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
+		t.Errorf("the default backup dir must be made private: %v %v", info, err)
 	}
 }

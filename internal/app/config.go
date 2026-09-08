@@ -88,11 +88,18 @@ func loadConfig(path string, explicit bool) (Config, error) {
 	if path == "" {
 		return cfg, nil
 	}
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	md, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		if os.IsNotExist(err) && !explicit {
 			return Config{}, nil
 		}
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	// A misspelt key (enable instead of enabled) must not silently keep the
+	// default; [keys] and [theme] are maps, so only the fixed sections can
+	// have one.
+	if unknown := md.Undecoded(); len(unknown) > 0 {
+		return Config{}, fmt.Errorf("config %s: unknown key %s", path, unknown[0])
 	}
 	return cfg, nil
 }

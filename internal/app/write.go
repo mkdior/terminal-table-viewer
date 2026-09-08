@@ -42,26 +42,28 @@ const defaultBackupKeep = 20
 // backupDir is where previous versions of written files are kept: the
 // configured directory, else $XDG_STATE_HOME/ttv/backup (~/.local/state on
 // Unix, the local application data directory on Windows). State, not cache:
-// cache directories may be cleaned out.
-func backupDir() (string, error) {
+// cache directories may be cleaned out. isDefault reports that the directory
+// is ours to keep private.
+func backupDir() (dir string, isDefault bool, err error) {
 	if backupDirOverride != "" {
-		return backupDirOverride, nil
+		return backupDirOverride, false, nil
 	}
-	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
-		return filepath.Join(dir, "ttv", "backup"), nil
+	// The XDG specification says a relative value is invalid and to be ignored.
+	if state := os.Getenv("XDG_STATE_HOME"); filepath.IsAbs(state) {
+		return filepath.Join(state, "ttv", "backup"), true, nil
 	}
 	if os.PathSeparator == '\\' {
-		dir, err := os.UserCacheDir() // %LocalAppData%
+		local, err := os.UserCacheDir() // %LocalAppData%
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
-		return filepath.Join(dir, "ttv", "backup"), nil
+		return filepath.Join(local, "ttv", "backup"), true, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return filepath.Join(home, ".local", "state", "ttv", "backup"), nil
+	return filepath.Join(home, ".local", "state", "ttv", "backup"), true, nil
 }
 
 // writeBlocker explains why the table cannot be written back to the file, or
@@ -123,17 +125,21 @@ func writeTable() bool {
 // directory; then, after checking once more that the file is still the one
 // that was loaded, the temporary file is renamed over it. The original path
 // is valid throughout: nothing is moved away before the one atomic rename.
-// backup is the path of the saved copy, "" when backups are off.
+// Older backups are pruned only once the new content is committed. backup is
+// the path of the saved copy, "" when backups are off.
 func writeFile(name string, buf *Buffer) (backup string, err error) {
 	real, err := filepath.EvalSymlinks(name)
 	if err != nil {
+		return "", err
+	}
+	if real, err = filepath.Abs(real); err != nil {
 		return "", err
 	}
 	info, err := os.Stat(real)
 	if err != nil {
 		return "", err
 	}
-	if err := writable(name, info); err != nil {
+	if err := writable(name, real, info); err != nil {
 		return "", err
 	}
 
@@ -165,8 +171,9 @@ func writeFile(name string, buf *Buffer) (backup string, err error) {
 		return "", err
 	}
 
+	var prune func()
 	if backupEnabled {
-		if backup, err = backupOriginal(real); err != nil {
+		if backup, prune, err = backupOriginal(real); err != nil {
 			return "", err
 		}
 	}
@@ -183,13 +190,16 @@ func writeFile(name string, buf *Buffer) (backup string, err error) {
 	committed = true
 	syncDir(dir)
 	sourceStat, _ = os.Stat(real)
+	if prune != nil {
+		prune()
+	}
 	return backup, nil
 }
 
 // writable reports why the file cannot be replaced: it changed since it was
 // loaded, it is not a regular file, it is read-only, or other names are hard
 // linked to it (replacing it would leave them with the old content).
-func writable(name string, info os.FileInfo) error {
+func writable(name, real string, info os.FileInfo) error {
 	switch {
 	case !info.Mode().IsRegular():
 		return fmt.Errorf("%s is not a regular file", name)
@@ -197,7 +207,7 @@ func writable(name string, info os.FileInfo) error {
 		return errors.New("the file changed on disk since it was loaded; reload before writing")
 	case info.Mode().Perm()&0o200 == 0:
 		return fmt.Errorf("%s is read-only", name)
-	case linkCount(info) > 1:
+	case linkCount(real, info) > 1:
 		return fmt.Errorf("%s has other hard links, which would keep the old content", name)
 	}
 	return nil
@@ -259,56 +269,97 @@ func writeDelimited(w *bufio.Writer, buf *Buffer) error {
 	return w.Flush()
 }
 
+// maxBackupBase caps the readable part of a backup name so the suffixes still
+// fit a 255-byte file name.
+const maxBackupBase = 200
+
 // backupName is the prefix shared by the backups of one file: its base name
-// and a short hash of its full path, so same-named files in different
-// directories do not mix and the name stays short and portable.
+// (cut to maxBackupBase bytes) and a 64-bit hash of its absolute path, so
+// same-named files in different directories do not mix and the name stays
+// portable.
 func backupName(real string) string {
+	base := filepath.Base(real)
+	if len(base) > maxBackupBase {
+		base = base[:maxBackupBase]
+	}
 	sum := sha256.Sum256([]byte(real))
-	return filepath.Base(real) + "." + hex.EncodeToString(sum[:4])
+	return base + "." + hex.EncodeToString(sum[:8])
 }
 
+// backupTempPrefix names the in-progress copies; it never matches a backup
+// prefix, so pruning and recovery ignore them.
+const backupTempPrefix = ".ttv-tmp-"
+
 // backupOriginal copies the file at real into the backup directory as
-// <base>.<path hash>.<timestamp>, created exclusively with mode 0600 and
-// fsynced together with the directory, then prunes the oldest backups of the
-// same file beyond backupKeep. The directory is created private (0700) and
-// must be a real directory, not a symlink.
-func backupOriginal(real string) (string, error) {
-	dir, err := backupDir()
+// <base>.<path hash>.<timestamp>: the bytes go to a temporary file first
+// (0600, fsynced), which is then linked to a final name that did not exist
+// (a counter is appended on a same-second collision), so a crash leaves only a
+// temporary file and no half-written backup under a final name. The directory
+// is created private (0700), kept so when it is ours, and must be a real
+// directory. The returned prune function removes the oldest backups of the
+// same file beyond backupKeep; the caller runs it after committing the write.
+func backupOriginal(real string) (path string, prune func(), err error) {
+	dir, isDefault, err := backupDir()
 	if err != nil {
-		return "", fmt.Errorf("backup: %w", err)
+		return "", nil, fmt.Errorf("backup: %w", err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("backup: %w", err)
+		return "", nil, fmt.Errorf("backup: %w", err)
 	}
-	if info, err := os.Lstat(dir); err != nil {
-		return "", fmt.Errorf("backup: %w", err)
-	} else if !info.IsDir() {
-		return "", fmt.Errorf("backup: %s is not a directory", dir)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", nil, fmt.Errorf("backup: %w", err)
+	}
+	if !info.IsDir() {
+		return "", nil, fmt.Errorf("backup: %s is not a directory", dir)
+	}
+	if isDefault && info.Mode().Perm() != 0o700 {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return "", nil, fmt.Errorf("backup: %w", err)
+		}
+	}
+	tmp, err := os.CreateTemp(dir, backupTempPrefix+"*")
+	if err != nil {
+		return "", nil, fmt.Errorf("backup: %w", err)
+	}
+	tmpName := tmp.Name()
+	if err := copyInto(tmp, real); err != nil {
+		_ = os.Remove(tmpName)
+		return "", nil, fmt.Errorf("backup: %w", err)
 	}
 	prefix := backupName(real) + "."
 	stamp := time.Now().Format("20060102-150405")
-	var out *os.File
-	var path string
 	for i := 0; ; i++ {
 		path = filepath.Join(dir, prefix+stamp)
 		if i > 0 {
-			path += fmt.Sprintf("-%d", i)
+			path += fmt.Sprintf("-%03d", i)
 		}
-		out, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		err = linkOrRename(tmpName, path)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, os.ErrExist) || i > 1000 {
-			return "", fmt.Errorf("backup: %w", err)
+		if !errors.Is(err, os.ErrExist) || i >= 999 {
+			_ = os.Remove(tmpName)
+			return "", nil, fmt.Errorf("backup: %w", err)
 		}
 	}
-	if err := copyInto(out, real); err != nil {
-		_ = os.Remove(path)
-		return "", fmt.Errorf("backup: %w", err)
-	}
+	_ = os.Remove(tmpName)
 	syncDir(dir)
-	pruneBackups(dir, prefix, path)
-	return path, nil
+	return path, func() { pruneBackups(dir, prefix, path) }, nil
+}
+
+// linkOrRename gives tmp the name final without replacing an existing file:
+// a hard link fails with ErrExist when the name is taken; on filesystems
+// without links it falls back to a rename after checking the name is free.
+func linkOrRename(tmp, final string) error {
+	err := os.Link(tmp, final)
+	if err == nil || errors.Is(err, os.ErrExist) {
+		return err
+	}
+	if _, statErr := os.Lstat(final); statErr == nil {
+		return os.ErrExist
+	}
+	return os.Rename(tmp, final)
 }
 
 // copyInto copies the file at src into out, fsyncs and closes it.
@@ -332,7 +383,8 @@ func copyInto(out *os.File, src string) error {
 
 // pruneBackups removes the oldest backups sharing prefix so that at most
 // backupKeep remain; keep is the backup just written and is never removed.
-// backupKeep 0 keeps everything.
+// backupKeep 0 keeps everything. Names sort chronologically: a fixed-width
+// timestamp followed by a zero-padded collision counter.
 func pruneBackups(dir, prefix, keep string) {
 	if backupKeep <= 0 {
 		return
@@ -347,7 +399,7 @@ func pruneBackups(dir, prefix, keep string) {
 			names = append(names, e.Name())
 		}
 	}
-	sort.Strings(names) // the timestamp orders them
+	sort.Strings(names)
 	for _, n := range names[:max(0, len(names)-backupKeep)] {
 		if p := filepath.Join(dir, n); p != keep {
 			_ = os.Remove(p)
@@ -355,8 +407,9 @@ func pruneBackups(dir, prefix, keep string) {
 	}
 }
 
-// syncDir flushes a directory's entries to disk; best effort, since not every
-// filesystem supports it.
+// syncDir flushes a directory's entries to disk. Best effort: directory fsync
+// is not supported everywhere (9p under WSL returns an error), and a write
+// that succeeded must not be reported as failed because of it.
 func syncDir(dir string) {
 	if d, err := os.Open(dir); err == nil {
 		_ = d.Sync()
@@ -386,8 +439,26 @@ func expandPath(p string) (string, error) {
 	return filepath.Abs(p)
 }
 
+// handleAppKey is the application-level input capture. Ctrl-C would stop the
+// application behind the keymap's back; it goes through the quit flow instead
+// so pending edits get their write/discard prompt, and in the cell editor it
+// acts as Escape, as it does in vim's insert mode.
+func handleAppKey(event *tcell.EventKey) *tcell.EventKey {
+	if event.Key() != tcell.KeyCtrlC {
+		return event
+	}
+	if cellEdit != nil {
+		cellEdit.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+		return nil
+	}
+	requestQuit()
+	return nil
+}
+
 // requestQuit quits the application, asking first what to do with pending
 // edits: write them, discard them, or stay. Ctrl-C arrives here as well.
+// Staying puts the focus back where it was, so a dialog that was open keeps
+// working.
 func requestQuit() {
 	if !dirty() {
 		app.Stop()
@@ -395,6 +466,11 @@ func requestQuit() {
 	}
 	if UI == nil || UI.HasPage("quitDialog") {
 		return
+	}
+	cancelOperator()
+	previous := app.GetFocus()
+	if previous == nil {
+		previous = bufferTable
 	}
 	text := editSummary() + ".\n\n"
 	buttons := []string{"Write", "Discard", "Cancel"}
@@ -408,9 +484,12 @@ func requestQuit() {
 	modal.SetBackgroundColor(theme.Panel).SetTextColor(theme.Text)
 	modal.SetButtonBackgroundColor(theme.Accent).SetButtonTextColor(theme.Background)
 	modal.SetBorderColor(theme.Accent)
-	modal.SetDoneFunc(func(_ int, label string) {
+	dismiss := func() {
 		UI.RemovePage("quitDialog")
-		app.SetFocus(bufferTable)
+		app.SetFocus(previous)
+	}
+	modal.SetDoneFunc(func(_ int, label string) {
+		dismiss()
 		switch label {
 		case "Write":
 			if writeTable() {
@@ -422,8 +501,7 @@ func requestQuit() {
 	})
 	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
-			UI.RemovePage("quitDialog")
-			app.SetFocus(bufferTable)
+			dismiss()
 			return nil
 		}
 		return event
