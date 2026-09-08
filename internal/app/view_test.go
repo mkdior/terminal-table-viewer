@@ -49,6 +49,41 @@ func wideUI(t *testing.T) tcell.SimulationScreen {
 	return screen
 }
 
+func TestTypingACountKeepsTheFooterStill(t *testing.T) {
+	screen := wideUI(t)
+	screen.SetSize(100, 12) // a realistic width: left text, status and position all fit
+	mainView.SetRect(0, 0, 100, 12)
+	bufferTable.Select(1, 0)
+	draw := func() []string {
+		mainView.Draw(screen)
+		screen.Show()
+		return strings.Split(screenText(screen), "\n")
+	}
+	before := draw()
+	press(t, "1 2")
+	after := draw()
+	t.Cleanup(func() { pendingCount = 0 })
+	footer := len(before) - 2 // the last screen row (the split leaves a trailing empty string)
+	if x, y := strings.Index(before[footer], "Column Type"), strings.Index(after[footer], "Column Type"); x < 0 || x != y {
+		t.Errorf("the cursor position must not move when a count is typed: %d -> %d\n%q\n%q", x, y, before[footer], after[footer])
+	}
+	if !strings.HasSuffix(strings.TrimRight(after[footer], " "), "1,0  12") {
+		t.Errorf("the count shows in the fixed showcmd slot: %q", after[footer])
+	}
+	if !strings.Contains(before[footer], "All Done") || !strings.Contains(after[footer], "All Done") {
+		t.Errorf("the status must stay visible: %q", after[footer])
+	}
+	for i := 0; i < footer; i++ {
+		if before[i] != after[i] {
+			t.Errorf("table row %d moved:\n%q\n%q", i, before[i], after[i])
+		}
+	}
+	press(t, "j") // the count is consumed and the slot empties
+	if line := draw()[footer]; strings.Contains(line, "  12") {
+		t.Errorf("the slot must clear after the motion: %q", line)
+	}
+}
+
 func TestVerticalMotionsKeepTheHorizontalScroll(t *testing.T) {
 	screen := wideUI(t)
 	draw := func() (int, int) {

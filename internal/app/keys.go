@@ -42,7 +42,7 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 	// Vim-style count prefix: digits accumulate and the next action uses
 	// them (5j, 3l, 12G). A leading 0 is left to the keymap (first_column).
 	if event.Key() == tcell.KeyRune && pushCountDigit(event.Rune()) {
-		drawFooterText(fileNameStr, statusMessage, pendingKeys()+"  |  "+cursorPosStr)
+		drawFooterText(fileNameStr, statusMessage, cursorPosStr)
 		return nil
 	}
 
@@ -124,7 +124,7 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 	if act == actDelete {
 		pendingOp, pendingOpRaw, pendingOpCount = act, rawCount, count
-		drawFooterText(fileNameStr, statusMessage, pendingKeys()+"  |  "+cursorPosStr)
+		drawFooterText(fileNameStr, statusMessage, cursorPosStr)
 		return nil
 	}
 	if info.motion {
@@ -137,6 +137,18 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 	runAction(act, rawCount, count)
 	return nil
+}
+
+// showcmdWidth is the fixed width of the footer slot that shows the typed but
+// unfinished command (vim's 'showcmd'). The slot sits at the right edge, after
+// the cursor position, and is always present, so the footer keeps still while
+// a count is typed instead of growing into the status text.
+const showcmdWidth = 8
+
+// footerRight composes the footer's right text: the cursor position, then the
+// showcmd slot.
+func footerRight(pos string) string {
+	return pos + fmt.Sprintf("%-*s", showcmdWidth, pendingKeys())
 }
 
 // pendingKeys renders the typed but unfinished command for the footer, as

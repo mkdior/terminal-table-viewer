@@ -347,7 +347,7 @@ func drawFooterText(lstr, cstr, rstr string) {
 
 	mainPage.AddText(lstr, false, tview.AlignLeft, theme.Accent).
 		AddText(cstr, false, tview.AlignCenter, theme.Text).
-		AddText(rstr, false, tview.AlignRight, theme.Dim)
+		AddText(footerRight(rstr), false, tview.AlignRight, theme.Dim)
 }
 
 // pageRows returns the number of data rows the table can show, at least 1.
@@ -436,7 +436,7 @@ func drawUI(b *Buffer) error {
 	// Add main footer at bottom
 	mainPage.AddText(fileNameStr, false, tview.AlignLeft, theme.Accent).
 		AddText(statusMessage, false, tview.AlignCenter, theme.Text).
-		AddText(cursorPosStr, false, tview.AlignRight, theme.Dim)
+		AddText(footerRight(cursorPosStr), false, tview.AlignRight, theme.Dim)
 
 	// Keep a handle on the screen so yanks can emit the OSC 52 clipboard escape.
 	app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
