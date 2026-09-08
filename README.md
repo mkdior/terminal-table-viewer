@@ -450,7 +450,8 @@ only touched when you press `W`. The footer marks the file `[+]` while edits
 are pending and sums them up after each one ("1 column (Age) and 3 rows
 removed, 2 cells changed, sorted by Age ascending"). `u` undoes edits one at
 a time, structural ones included, and `q` (or Ctrl-C) asks whether to write,
-discard or stay while edits are pending.
+discard or stay while edits are pending (`w`, `d`, `c` or Esc answer directly;
+Tab moves between the buttons, the bright one is selected).
 
 Rows and columns: `d` is vim's operator. `dd` removes the current row;
     `dj`, `d3j`, `dG` and `dgg` remove the rows a vertical motion spans;

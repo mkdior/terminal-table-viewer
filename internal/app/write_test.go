@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -407,5 +408,57 @@ func TestBackupLeavesTempFilesAloneAndPrunesAfterCommit(t *testing.T) {
 	press(t, "W")
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
 		t.Errorf("the default backup dir must be made private: %v %v", info, err)
+	}
+}
+
+// pressModal sends keys to the quit dialog the way a user does: Tab moves
+// between the buttons (Write, Discard, Cancel from the left), Enter presses.
+func pressModal(t *testing.T, keys ...tcell.Key) {
+	t.Helper()
+	_, front := UI.GetFrontPage()
+	modal, ok := front.(*tview.Modal)
+	if !ok {
+		t.Fatalf("front page is %T, not a modal", front)
+	}
+	modal.Focus(func(tview.Primitive) {})
+	for _, k := range keys {
+		modal.InputHandler()(tcell.NewEventKey(k, 0, tcell.ModNone), func(p tview.Primitive) { p.Focus(func(tview.Primitive) {}) })
+	}
+}
+
+func TestQuitDialogButtons(t *testing.T) {
+	path := setupWriteTable(t, "a,b\n1,2\n3,4\n")
+	stops := 0
+	oldStop := stopApp
+	stopApp = func() { stops++ }
+	t.Cleanup(func() { stopApp = oldStop })
+
+	press(t, "d d q")
+	if !UI.HasPage("quitDialog") {
+		t.Fatal("dialog expected")
+	}
+	pressModal(t, tcell.KeyTab, tcell.KeyTab, tcell.KeyEnter) // third button: Cancel
+	if UI.HasPage("quitDialog") || stops != 0 || !dirty() {
+		t.Errorf("Cancel must close the dialog and stay: page=%v stops=%d dirty=%v", UI.HasPage("quitDialog"), stops, dirty())
+	}
+	if app.GetFocus() != bufferTable {
+		t.Errorf("focus back on the table, got %T", app.GetFocus())
+	}
+
+	press(t, "q")
+	pressModal(t, tcell.KeyTab, tcell.KeyEnter) // second button: Discard
+	if UI.HasPage("quitDialog") || stops != 1 || readFile(t, path) != "a,b\n1,2\n3,4\n" {
+		t.Errorf("Discard must quit without writing: stops=%d file %q", stops, readFile(t, path))
+	}
+
+	press(t, "q")
+	pressModal(t, tcell.KeyEnter) // first button: Write
+	if stops != 2 || dirty() || readFile(t, path) != "a,b\n3,4\n" {
+		t.Errorf("Write must write and quit: stops=%d dirty=%v file %q", stops, dirty(), readFile(t, path))
+	}
+
+	press(t, "q") // clean table: quits at once
+	if stops != 3 {
+		t.Errorf("q on a clean table quits: stops=%d", stops)
 	}
 }

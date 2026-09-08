@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -455,13 +456,16 @@ func handleAppKey(event *tcell.EventKey) *tcell.EventKey {
 	return nil
 }
 
+// stopApp ends the application; a variable so tests can observe quitting.
+var stopApp = func() { app.Stop() }
+
 // requestQuit quits the application, asking first what to do with pending
 // edits: write them, discard them, or stay. Ctrl-C arrives here as well.
 // Staying puts the focus back where it was, so a dialog that was open keeps
 // working.
 func requestQuit() {
 	if !dirty() {
-		app.Stop()
+		stopApp()
 		return
 	}
 	if UI == nil || UI.HasPage("quitDialog") {
@@ -475,34 +479,46 @@ func requestQuit() {
 	text := editSummary() + ".\n\n"
 	buttons := []string{"Write", "Discard", "Cancel"}
 	if reason := writeBlocker(); reason != "" {
-		text += "The changes cannot be written: " + reason + ".\n\nQuit and discard them?"
+		text += "The changes cannot be written: " + reason + ".\n\nQuit and discard them?  (d discards, c or Esc stays)"
 		buttons = []string{"Discard", "Cancel"}
 	} else {
-		text += "Write the changes to " + filepath.Base(args.FileName) + "?"
+		text += "Write the changes to " + filepath.Base(args.FileName) + "?  (w writes, d discards, c or Esc stays)"
 	}
 	modal := tview.NewModal().SetText(text).AddButtons(buttons)
 	modal.SetBackgroundColor(theme.Panel).SetTextColor(theme.Text)
-	modal.SetButtonBackgroundColor(theme.Accent).SetButtonTextColor(theme.Background)
+	// The focused button is the bright one, as in the other dialogs; the
+	// others sit on the panel colour so the choice about to be made is plain.
+	modal.SetButtonBackgroundColor(theme.Background).SetButtonTextColor(theme.Text)
+	modal.SetButtonActivatedStyle(theme.selectedStyle())
 	modal.SetBorderColor(theme.Accent)
 	dismiss := func() {
 		UI.RemovePage("quitDialog")
 		app.SetFocus(previous)
 	}
-	modal.SetDoneFunc(func(_ int, label string) {
+	choose := func(label string) {
 		dismiss()
 		switch label {
 		case "Write":
 			if writeTable() {
-				app.Stop()
+				stopApp()
 			}
 		case "Discard":
-			app.Stop()
+			stopApp()
 		}
-	})
+	}
+	modal.SetDoneFunc(func(_ int, label string) { choose(label) })
 	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
 			dismiss()
 			return nil
+		}
+		if event.Key() == tcell.KeyRune {
+			for _, label := range buttons {
+				if event.Rune() == unicode.ToLower([]rune(label)[0]) {
+					choose(label)
+					return nil
+				}
+			}
 		}
 		return event
 	})
