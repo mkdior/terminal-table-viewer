@@ -241,3 +241,46 @@ func TestHiddenColumnsFoldToAMarker(t *testing.T) {
 		t.Error("hiding and showing are not edits")
 	}
 }
+
+func TestColumnLayoutIsStableBetweenFrames(t *testing.T) {
+	screen := wideUI(t) // twelve columns; six fit, with five spare cells for a cut one
+	t.Cleanup(func() { hiddenCols = map[int]bool{} })
+	hiddenCols = map[int]bool{}
+	screen.SetSize(65, 12)
+	mainView.SetRect(0, 0, 65, 12)
+	header := func() string {
+		mainView.Draw(screen)
+		screen.Show()
+		return strings.Split(screenText(screen), "\n")[0]
+	}
+	bufferTable.Select(1, 6)
+	first := header()
+	press(t, "l l l") // to column 9: the view scrolls right
+	after := header()
+	if !strings.Contains(after, "header9 ") {
+		t.Fatalf("column 9 must be shown in full after moving onto it:\n%s", after)
+	}
+	if again := header(); again != after {
+		t.Errorf("a redraw without a motion must not change the layout:\n%s\n%s", after, again)
+	}
+	press(t, "z") // starts a chord: only the footer changes
+	if got := header(); got != after {
+		t.Errorf("pressing z must not shift the columns:\n%s\n%s", after, got)
+	}
+	press(t, "c") // fold column 9: it becomes a marker, everything else stays put
+	folded := header()
+	upToH8 := after[:strings.Index(after, "header8")+len("header8")]
+	if !strings.Contains(folded, foldMarker) || !strings.HasPrefix(folded, upToH8) || strings.Contains(folded, "header9") {
+		t.Errorf("folding the selected column must keep the columns before it in place:\n%s\n%s", after, folded)
+	}
+	press(t, "z o")
+	if got := header(); got != after {
+		t.Errorf("unfolding restores the layout:\n%s\n%s", after, got)
+	}
+	_ = first
+	// The selected column is never the cut one: moving back left keeps it whole.
+	press(t, "h h")
+	if got := header(); !strings.Contains(got, "header7 ") {
+		t.Errorf("column 7 must be shown in full:\n%s", got)
+	}
+}

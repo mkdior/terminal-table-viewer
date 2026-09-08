@@ -251,6 +251,78 @@ func (c *bufferContent) buildCell(r, col int) *tview.TableCell {
 	return cell
 }
 
+// displayColumnWidth is the width tview gives column c: the widest cell, cut
+// by a width limit, one cell for a hidden column, and four more on a header
+// marked as filtered.
+func displayColumnWidth(c int) int {
+	if hiddenCols[c] {
+		return 1
+	}
+	w := b.columnWidth(c)
+	if limit, ok := wrappedColumns[c]; ok && w > limit {
+		w = limit
+	}
+	if isFiltered {
+		if _, ok := activeFilters[c]; ok {
+			w += 4
+		}
+	}
+	return w
+}
+
+// pinColumnOffset sets the horizontal offset so that a forward layout of the
+// table, tw cells wide, shows the selected column in full. tview lays a frame out "ending with
+// the selection" only right after Select; the next redraw packs forward from
+// the offset, so a column that was cut on the left moves to the right and the
+// selected column can end up cut instead, shifting the view between two
+// frames with no motion at all. Choosing an offset whose forward layout
+// includes the selection keeps every frame the same.
+func pinColumnOffset(tw int) {
+	if bufferTable == nil || b == nil {
+		return
+	}
+	fixed := b.colFreeze
+	_, sel := bufferTable.GetSelection()
+	if tw <= 0 || sel < fixed || sel >= b.colLen {
+		return
+	}
+	rowOff, colOff := bufferTable.GetOffset()
+	fixedWidth := 0
+	for c := 0; c < fixed && c < b.colLen; c++ {
+		fixedWidth += displayColumnWidth(c) + 1
+	}
+	// includes reports whether column sel is shown in full when the columns
+	// from fixed+off onwards are laid out after the fixed ones.
+	includes := func(off int) bool {
+		used := fixedWidth
+		for c := fixed + off; c <= sel; c++ {
+			w := displayColumnWidth(c)
+			if c == sel {
+				return used+w <= tw
+			}
+			used += w + 1
+			if used >= tw {
+				return false
+			}
+		}
+		return false
+	}
+	want := colOff
+	if sel < fixed+colOff {
+		want = sel - fixed
+	} else {
+		for want <= sel-fixed && !includes(want) {
+			want++
+		}
+		if want > sel-fixed {
+			want = sel - fixed // wider than the screen: start with the selection
+		}
+	}
+	if want != colOff {
+		bufferTable.SetOffset(rowOff, want)
+	}
+}
+
 // firstDataRow returns the first selectable row of b: the row after the
 // frozen header, or 0 when no header is frozen.
 func firstDataRow(b *Buffer) int {

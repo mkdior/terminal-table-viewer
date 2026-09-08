@@ -76,6 +76,10 @@ func (p *cellPreview) Draw(screen tcell.Screen) {
 	if currentContent != nil {
 		currentContent.beginFrame()
 	}
+	// The table is as wide as the frame (no side borders), and the frame's
+	// rect is known before the table's own is set by the draw.
+	_, _, frameW, _ := p.GetInnerRect()
+	pinColumnOffset(frameW)
 	p.Frame.Draw(screen)
 	if cellEdit != nil {
 		cellEdit.draw(screen)
