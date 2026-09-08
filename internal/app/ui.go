@@ -481,34 +481,35 @@ func drawUI(b *Buffer) error {
 
 	//bufferTable HotKey Event: every key goes through the keymap
 	bufferTable.SetInputCapture(handleTableKey)
-	// Add mouse handler for scrolling and clicking
-	bufferTable.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		// Mark that user has interacted via mouse
-		if action == tview.MouseLeftClick {
-			userMovedCursor = true
-		}
-
-		// Handle mouse wheel scrolling
-		switch action {
-		case tview.MouseScrollUp:
-			row, col := bufferTable.GetSelection()
-			if row > firstDataRow(b) {
-				bufferTable.Select(row-1, col)
-			}
-			return action, event
-		case tview.MouseScrollDown:
-			row, col := bufferTable.GetSelection()
-			if row < b.rowLen-1 {
-				bufferTable.Select(row+1, col)
-			}
-			return action, event
-		}
-
-		// Pass through other mouse events to default handler
-		return action, event
-	})
+	bufferTable.SetMouseCapture(handleTableMouse)
 
 	return nil
+}
+
+// handleTableMouse is the table's mouse capture: the wheel moves the
+// selection one row, clicks count as the user moving the cursor, and nothing
+// reaches the table while a cell is being edited, so the editor stays on its
+// cell instead of the table scrolling away underneath it.
+func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+	if cellEdit != nil {
+		return action, nil
+	}
+	if action == tview.MouseLeftClick {
+		userMovedCursor = true
+	}
+	switch action {
+	case tview.MouseScrollUp:
+		row, col := bufferTable.GetSelection()
+		if row > firstDataRow(b) {
+			bufferTable.Select(row-1, col)
+		}
+	case tview.MouseScrollDown:
+		row, col := bufferTable.GetSelection()
+		if row < b.rowLen-1 {
+			bufferTable.Select(row+1, col)
+		}
+	}
+	return action, event
 }
 
 // openSearchDialog shows the search form and runs the search on Enter.

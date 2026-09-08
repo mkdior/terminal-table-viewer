@@ -40,19 +40,50 @@ func startCellEdit(how action) {
 	showEditStatus()
 }
 
-// handleKey routes a key to the open editor and closes it when it is done.
+// handleKey routes a key to the open editor and closes it when it is done. In
+// the editor's normal sub-mode a vertical table motion (j, k, paging, G)
+// applies the value and moves on, so "i text Esc j" edits a cell and steps to
+// the next one the way a spreadsheet does; Esc there still cancels.
 func (c *cellEditor) handleKey(ev *tcell.EventKey) {
+	if c.ed.mode == editNormal && leavesEditor(ev) {
+		closeCellEdit()
+		changeCell(c.row, c.col, string(c.ed.text))
+		handleTableKey(ev)
+		return
+	}
 	c.ed.key(editKeyOf(ev))
 	if !c.ed.done {
 		showEditStatus()
 		return
 	}
-	cellEdit = nil
+	closeCellEdit()
 	if c.ed.applied {
 		changeCell(c.row, c.col, string(c.ed.text))
 		return
 	}
 	drawFooterText(fileNameStr, "Edit cancelled", cursorPosStr)
+}
+
+// leavesEditor reports whether a key is a vertical table motion under the
+// active keymap: those end the edit instead of being fed to the line editor,
+// which has no use for them.
+func leavesEditor(ev *tcell.EventKey) bool {
+	act, _ := keys.resolve([]keyStroke{strokeFromEvent(ev)})
+	switch act {
+	case actMoveDown, actMoveUp, actPageDown, actPageUp, actHalfPageDown, actHalfPageUp, actLastRow:
+		return true
+	}
+	return false
+}
+
+// closeCellEdit removes the editor and hides the terminal cursor it showed
+// while inserting: tview only hides the cursor on a focus change, so without
+// this it would stay on screen, fixed at that spot while the table scrolls.
+func closeCellEdit() {
+	cellEdit = nil
+	if screenRef != nil {
+		screenRef.HideCursor()
+	}
 }
 
 // showEditStatus puts the editor's sub-mode in the footer, as vim's showmode.
@@ -160,5 +191,7 @@ func (c *cellEditor) draw(screen tcell.Screen) {
 	}
 	if typing {
 		screen.ShowCursor(cx, y)
+	} else {
+		screen.HideCursor()
 	}
 }

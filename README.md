@@ -459,8 +459,11 @@ Cells: `x` clears the cell under the cursor (`3x` three cells; in visual mode
     with `o d c y x ~ u U r p`; `R` to replace; `i a I A` to insert. In
     insert mode Backspace, Delete, the arrows, Home, End, Ctrl-w and Ctrl-u
     work as usual. Enter applies the value; Esc in normal mode cancels, as on
-    vim's command line. `i` and `a` open the cell straight in insert mode,
-    `cc` clears it first. The register and `.` carry over from cell to cell.
+    vim's command line; a vertical table motion in normal mode (`j`, `k`,
+    `G`, paging) applies the value and moves to that cell, so `i`, text,
+    `Esc`, `j` edits a cell and steps to the next. `i` and `a` open the cell
+    straight in insert mode, `cc` clears it first. The register and `.` carry
+    over from cell to cell.
     The cursor moves by code point: combining marks are drawn with their base
     character but count as positions of their own. Ctrl-C in the editor acts
     as Esc.

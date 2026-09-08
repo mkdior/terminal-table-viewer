@@ -52,6 +52,27 @@ func TestCellEditorThroughKeys(t *testing.T) {
 		t.Errorf("three undos back to the start: %q", b.cont[1][0])
 	}
 
+	// A vertical table motion in normal sub-mode applies and moves on.
+	press(t, "i X esc j")
+	if cellEdit != nil || b.cont[1][0] != "Xa1" {
+		t.Errorf("i X Esc j must apply and close: editor %v cell %q", cellEdit, b.cont[1][0])
+	}
+	if r, _ := bufferTable.GetSelection(); r != 2 {
+		t.Errorf("j after applying must move down, row %d", r)
+	}
+	press(t, "k u")
+	if b.cont[1][0] != "a1" {
+		t.Errorf("undo after a motion-applied edit: %q", b.cont[1][0])
+	}
+	press(t, "E $ G")
+	if cellEdit != nil || dirty() {
+		t.Errorf("G in normal sub-mode with an unchanged value closes without an edit: dirty=%v", dirty())
+	}
+	if r, _ := bufferTable.GetSelection(); r != 4 {
+		t.Errorf("G must reach the last row, got %d", r)
+	}
+	press(t, "g g")
+
 	// Esc in normal mode cancels; an unchanged value records nothing.
 	press(t, "E x esc")
 	if cellEdit != nil || b.cont[1][0] != "a1" || dirty() || statusMessage != "Edit cancelled" {
@@ -159,6 +180,9 @@ func TestCellEditorDrawsOverTheCell(t *testing.T) {
 	press(t, "esc") // normal mode: the character under the cursor is drawn in reverse
 	mainView.Draw(screen)
 	screen.Show()
+	if _, _, visible := screen.GetCursor(); visible {
+		t.Error("the terminal cursor must be hidden once insert mode ends")
+	}
 	cells, w, _ := screen.GetContents()
 	x := strings.Index(strings.Split(screenText(screen), "\n")[row], "b2xyz")
 	_, _, attrs := cells[row*w+x+4].Style.Decompose()
@@ -169,6 +193,22 @@ func TestCellEditorDrawsOverTheCell(t *testing.T) {
 	if b.cont[2][1] != "b2xyz" || cellEdit != nil {
 		t.Errorf("applied %q", b.cont[2][1])
 	}
+	// Closing from insert mode hides the terminal cursor through the screen
+	// handle, since tview does not hide it on its own.
+	oldScreen := screenRef
+	screenRef = screen
+	t.Cleanup(func() { screenRef = oldScreen })
+	press(t, "i q")
+	mainView.Draw(screen)
+	screen.Show()
+	if _, _, visible := screen.GetCursor(); !visible {
+		t.Fatal("precondition: the cursor shows while inserting")
+	}
+	press(t, "enter")
+	if _, _, visible := screen.GetCursor(); visible {
+		t.Error("closing the editor must hide the terminal cursor")
+	}
+	press(t, "u")
 
 	// A combining mark is drawn together with its base character.
 	b.cont[3][1] = "e\u0301x"
@@ -220,4 +260,24 @@ func TestCtrlCInEditorAndQuitFocus(t *testing.T) {
 	if UI.HasPage("quitDialog") || app.GetFocus() != form {
 		t.Errorf("Esc must close the dialog and restore the focus: page=%v focus=%T", UI.HasPage("quitDialog"), app.GetFocus())
 	}
+}
+
+func TestMouseIsIgnoredWhileEditing(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { cellEdit = nil })
+	wheel := tcell.NewEventMouse(0, 0, tcell.WheelDown, tcell.ModNone)
+	if _, ev := handleTableMouse(tview.MouseScrollDown, wheel); ev == nil {
+		t.Fatal("without an editor the wheel event passes through")
+	}
+	if r, _ := bufferTable.GetSelection(); r != 2 {
+		t.Errorf("the wheel must move the selection down, row %d", r)
+	}
+	press(t, "E")
+	if _, ev := handleTableMouse(tview.MouseScrollDown, wheel); ev != nil {
+		t.Error("mouse events must be consumed while a cell is edited")
+	}
+	if r, _ := bufferTable.GetSelection(); r != 2 || cellEdit == nil || cellEdit.row != 2 {
+		t.Errorf("the table must not scroll away from the edited cell: row %d editor %+v", r, cellEdit)
+	}
+	press(t, "esc")
 }
