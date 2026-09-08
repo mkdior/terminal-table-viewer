@@ -29,7 +29,8 @@ work after the original project went unmaintained. See [Credits](#credits).
 TTV brings spreadsheet-like functionality to your terminal with vim-inspired
 controls.
 
-- **Spreadsheet interface**: navigate tabular data with frozen headers
+- **Spreadsheet interface**: navigate tabular data with frozen headers; the
+  row under the cursor is tinted so it can be followed across wide tables
 - **Smart parsing**: detects the delimiter (comma, tab, pipe, semicolon, or
   anything consistent) and tolerates ragged rows
 - **Progressive loading**: the table appears immediately and fills in while a
@@ -607,7 +608,8 @@ one colour role. Colours are `colour<n>` (an xterm-256 palette index, as in
 tmux), `#rrggbb`, or a name such as `red`.
 
 Roles: `background`, `text`, `dim`, `panel`, `stripe`, `border`, `accent`,
-    `alert`, `selection`
+    `alert`, `selection`, `cursorline` (the row under the cursor, tinted so
+    it can be followed across a wide table)
 
 ```toml
 [theme]

@@ -32,6 +32,7 @@ func wideUI(t *testing.T) tcell.SimulationScreen {
 	setupEditTable(t)
 	b = buf
 	bufferTable = tview.NewTable().SetSelectable(true, true).SetFixed(1, 1)
+	bufferTable.SetSelectedStyle(theme.selectedStyle())
 	drawBuffer(b, bufferTable)
 	bufferTable.Focus(func(tview.Primitive) {})
 	oldPage, oldView := mainPage, mainView
@@ -114,5 +115,39 @@ func TestVerticalMotionsKeepTheHorizontalScroll(t *testing.T) {
 	}
 	if out := screenText(screen); !strings.Contains(out, "r40c6xxxx") || !strings.Contains(out, "r40c9xxxx") || strings.Contains(out, "r40c1xxxx") {
 		t.Errorf("the last row and the scrolled columns must be visible:\n%s", out)
+	}
+}
+
+func TestCursorRowIsTinted(t *testing.T) {
+	screen := wideUI(t)
+	bufferTable.Select(2, 1)
+	mainView.Draw(screen)
+	screen.Show()
+	cells, w, _ := screen.GetContents()
+	out := strings.Split(screenText(screen), "\n")
+	row := rowOf(screenText(screen), "r2c0xxxx")
+	other := rowOf(screenText(screen), "r3c0xxxx")
+	bgAt := func(y, x int) tcell.Color {
+		_, bg, _ := cells[y*w+x].Style.Decompose()
+		return bg
+	}
+	x3 := strings.Index(out[row], "r2c3xxxx") // a cell in the cursor's row, away from the cursor
+	if x3 < 0 {
+		t.Fatalf("layout:\n%s", screenText(screen))
+	}
+	if got := bgAt(row, x3); got != theme.CursorLine {
+		t.Errorf("cells of the cursor's row are tinted: got %v, want %v", got, theme.CursorLine)
+	}
+	if got := bgAt(row, strings.Index(out[row], "r2c0xxxx")); got != theme.CursorLine {
+		t.Errorf("the frozen column of the cursor's row is tinted too: %v", got)
+	}
+	if got := bgAt(row, strings.Index(out[row], "r2c1xxxx")); got != theme.Accent {
+		t.Errorf("the selected cell keeps the cursor style: %v", got)
+	}
+	if got := bgAt(other, strings.Index(out[other], "r3c3xxxx")); got != theme.Background {
+		t.Errorf("other rows keep the plain background: %v", got)
+	}
+	if got := bgAt(rowOf(screenText(screen), "header0"), strings.Index(out[rowOf(screenText(screen), "header0")], "header3")); got != theme.Panel {
+		t.Errorf("the header keeps its panel background: %v", got)
 	}
 }

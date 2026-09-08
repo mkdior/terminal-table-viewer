@@ -88,17 +88,24 @@ func setSearchResults(results []SearchResult) {
 // draw, and the cached object keeps the screen position tview records on it.
 type bufferContent struct {
 	tview.TableContentReadOnly
-	b     *Buffer
-	cells map[[2]int]*tview.TableCell
+	b      *Buffer
+	cells  map[[2]int]*tview.TableCell
+	selRow int // the row under the cursor during this frame; its cells are tinted
 }
 
 // currentContent is the content the table is showing; cellPreview uses it to
 // find where the selected cell was drawn.
 var currentContent *bufferContent
 
-// beginFrame drops the cells cached during the previous draw.
+// beginFrame drops the cells cached during the previous draw and notes the
+// cursor's row, so the whole row can be tinted and followed across a wide
+// table while the selected cell keeps the bright cursor style.
 func (c *bufferContent) beginFrame() {
 	c.cells = make(map[[2]int]*tview.TableCell, len(c.cells))
+	c.selRow = -1
+	if bufferTable != nil {
+		c.selRow, _ = bufferTable.GetSelection()
+	}
 }
 
 // drawnCell returns the cell object drawn at row, col in the current frame.
@@ -174,6 +181,10 @@ func (c *bufferContent) buildCell(r, col int) *tview.TableCell {
 		// Frozen column: accent text, like the current window in tmux
 		color = theme.Accent
 		attributes = tcell.AttrBold
+	}
+	if !isHeaderRow && r == c.selRow {
+		// The cursor's row, subtly, so it can be followed across the table
+		backgroundColor = theme.CursorLine
 	}
 
 	// Search match highlighting overrides header styling
@@ -261,7 +272,7 @@ func padToWidth(text string, width int, center bool) string {
 // drawBuffer points the table at b. Cells are produced lazily by bufferContent,
 // so this is cheap to call after every state change (load tick, sort, filter, search).
 func drawBuffer(b *Buffer, t *tview.Table) {
-	currentContent = &bufferContent{b: b}
+	currentContent = &bufferContent{b: b, selRow: -1}
 	t.SetContent(currentContent)
 }
 
