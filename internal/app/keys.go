@@ -100,6 +100,12 @@ func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
 			visual = visualOff
 			clearCells(r1, c1, r2, c2)
 			return nil
+		case actInsert, actAppend, actChange:
+			// Block insert: type once, apply to every selected cell.
+			r1, c1, r2, c2 := visualRect()
+			visual = visualOff
+			startBulkEdit(act, r1, c1, r2, c2)
+			return nil
 		case actCancel, actQuit:
 			// In visual mode q backs out of the selection like Esc; it never quits.
 			exitVisual("All Done")

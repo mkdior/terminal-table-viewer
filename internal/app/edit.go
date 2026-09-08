@@ -248,6 +248,58 @@ func deleteColumns(c1, c2 int, toClipboard bool) {
 	editStatus(did + refreshView(row, c1))
 }
 
+// cellTarget is one cell to store a value in: the row by identity, the column,
+// and the new value.
+type cellTarget struct {
+	row   []string
+	col   int
+	value string
+}
+
+// rectTargets lists the cells of the view in rows r1..r2, columns c1..c2 with
+// the value f gives for each current value.
+func rectTargets(r1, c1, r2, c2 int, f func(string) string) []cellTarget {
+	r1, r2 = orderRange(r1, r2, firstDataRow(b), b.rowLen-1)
+	c1, c2 = orderRange(c1, c2, 0, b.colLen-1)
+	var targets []cellTarget
+	for r := r1; r <= r2; r++ {
+		row := b.cont[r]
+		for c := c1; c <= c2 && c < len(row); c++ {
+			targets = append(targets, cellTarget{row, c, f(row[c])})
+		}
+	}
+	return targets
+}
+
+// setCells stores values in many cells as one edit and re-derives a filtered
+// view; cells that already hold their value are skipped. did names the
+// operation for the footer ("Cleared", "Pasted"). It returns how many cells
+// changed; on zero nothing is recorded and the footer is left to the caller.
+func setCells(targets []cellTarget, did string) int {
+	if !editsAllowed() {
+		return 0
+	}
+	base := baseBuffer()
+	var changes []cellChange
+	for _, tg := range targets {
+		if tg.col < 0 || tg.col >= len(tg.row) || tg.row[tg.col] == tg.value {
+			continue
+		}
+		changes = append(changes, cellChange{tg.row, tg.col, tg.row[tg.col]})
+		base.setCell(tg.row, tg.col, tg.value)
+		if b != base {
+			b.trackWidth(tg.col, tg.value)
+		}
+	}
+	if len(changes) == 0 {
+		return 0
+	}
+	edits = append(edits, edit{cells: changes})
+	row, col := bufferTable.GetSelection()
+	editStatus(did + " " + plural(len(changes), "cell") + refreshView(row, col))
+	return len(changes)
+}
+
 // clearCells empties the cells in rows r1..r2, columns c1..c2 of the view as
 // one edit. Cells that are already empty are left alone. Like every edit it
 // re-derives a filtered view, so a row that stops matching disappears.
@@ -255,27 +307,9 @@ func clearCells(r1, c1, r2, c2 int) {
 	if !editsAllowed() {
 		return
 	}
-	r1, r2 = orderRange(r1, r2, firstDataRow(b), b.rowLen-1)
-	c1, c2 = orderRange(c1, c2, 0, b.colLen-1)
-	base := baseBuffer()
-	var changes []cellChange
-	for r := r1; r <= r2; r++ {
-		row := b.cont[r]
-		for c := c1; c <= c2 && c < len(row); c++ {
-			if row[c] == "" {
-				continue
-			}
-			changes = append(changes, cellChange{row, c, row[c]})
-			base.setCell(row, c, "")
-		}
-	}
-	if len(changes) == 0 {
+	if setCells(rectTargets(r1, c1, r2, c2, func(string) string { return "" }), "Cleared") == 0 {
 		drawFooterText(fileNameStr, "Nothing to clear", cursorPosStr)
-		return
 	}
-	edits = append(edits, edit{cells: changes})
-	row, col := bufferTable.GetSelection()
-	editStatus("Cleared " + plural(len(changes), "cell") + refreshView(row, col))
 }
 
 // changeCell records the previous value of one cell and stores the new one as

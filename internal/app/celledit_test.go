@@ -126,13 +126,13 @@ func TestCellEditorWaitsForLoadAndKeepsVisualOut(t *testing.T) {
 		t.Errorf("editing must wait for the load: %v %q", cellEdit, statusMessage)
 	}
 	loadProgress.IsComplete.Store(true)
-	press(t, "V j i") // a non-motion leaves visual mode, then opens the editor on the cursor cell
-	if visual != visualOff || cellEdit == nil || cellEdit.row != 2 || cellEdit.ed.mode != editInsert {
+	press(t, "V j i") // in visual mode i is a bulk insert on the first selected cell
+	if visual != visualOff || cellEdit == nil || cellEdit.bulk == nil || cellEdit.row != 1 || cellEdit.ed.mode != editInsert {
 		t.Errorf("i from visual mode: visual=%v editor %+v", visual, cellEdit)
 	}
-	press(t, "esc esc")
-	if cellEdit != nil {
-		t.Error("Esc twice closes the editor")
+	press(t, "esc")
+	if cellEdit != nil || dirty() {
+		t.Error("Esc applies the (empty) bulk insert and closes the editor")
 	}
 	if got := keys.keysFor(actStats); got != "I" {
 		t.Errorf("stats moved to I, got %q", got)
@@ -280,4 +280,93 @@ func TestMouseIsIgnoredWhileEditing(t *testing.T) {
 		t.Errorf("the table must not scroll away from the edited cell: row %d editor %+v", r, cellEdit)
 	}
 	press(t, "esc")
+}
+
+func TestBulkEditInVisualMode(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { cellEdit = nil })
+
+	// Ctrl-v down two cells, Ctrl-I (Tab), type, Esc: every cell is prefixed.
+	press(t, "ctrl+v j j ctrl+i")
+	if cellEdit == nil || cellEdit.bulk == nil || cellEdit.row != 1 || cellEdit.col != 0 || cellEdit.ed.mode != editInsert {
+		t.Fatalf("bulk insert must open on the first selected cell in insert mode: %+v", cellEdit)
+	}
+	if r, c := bufferTable.GetSelection(); r != 1 || c != 0 {
+		t.Errorf("the cursor jumps back to the first cell, got %d,%d", r, c)
+	}
+	if !strings.Contains(statusMessage, "applies to 3 cells") {
+		t.Errorf("status %q", statusMessage)
+	}
+	press(t, "x y esc")
+	if cellEdit != nil {
+		t.Fatal("Esc must apply and close a bulk edit")
+	}
+	if got := joined(column(b, 0)); got != "h1 xya1 xya2 xya3 a4" || editSummary() != "3 cells changed" {
+		t.Errorf("bulk insert: %q summary %q", got, editSummary())
+	}
+	press(t, "u")
+	if got := joined(column(b, 0)); got != "h1 a1 a2 a3 a4" || dirty() {
+		t.Errorf("one undo restores all: %q", got)
+	}
+
+	// a appends, Enter applies too.
+	press(t, "v j a Z enter")
+	if got := joined(column(b, 0)); got != "h1 a1Z a2Z a3 a4" {
+		t.Errorf("bulk append: %q", got)
+	}
+	press(t, "u")
+
+	// cc replaces every cell of the selected rows.
+	press(t, "V j c c n e w esc")
+	for r := 1; r <= 2; r++ {
+		for c := 0; c < 4; c++ {
+			if b.cont[r][c] != "new" {
+				t.Errorf("cell %d,%d = %q, want new", r, c, b.cont[r][c])
+			}
+		}
+	}
+	if b.cont[3][0] != "a3" || editSummary() != "8 cells changed" {
+		t.Errorf("rows outside the selection untouched; summary %q", editSummary())
+	}
+	press(t, "u")
+
+	// Editing the original value as well: the whole text goes everywhere.
+	press(t, "v j i delete delete Q esc")
+	if b.cont[1][0] != "Q" || b.cont[2][0] != "Q" {
+		t.Errorf("edited original: %q %q", b.cont[1][0], b.cont[2][0])
+	}
+	press(t, "u")
+
+	// Typing nothing changes nothing.
+	press(t, "v j ctrl+i esc")
+	if dirty() || statusMessage != "No change" {
+		t.Errorf("empty bulk insert: dirty=%v %q", dirty(), statusMessage)
+	}
+
+	// Tab in normal mode is insert on the cell.
+	press(t, "ctrl+i W enter")
+	if b.cont[1][0] != "Wa1" {
+		t.Errorf("Ctrl-I in normal mode: %q", b.cont[1][0])
+	}
+	if got := keys.keysFor(actInsert); got != "i, Ctrl-i" {
+		t.Errorf("insert keys = %q", got)
+	}
+}
+
+func TestBulkEditThroughFilteredView(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { cellEdit = nil })
+	originalBuffer = b
+	activeFilters[0] = FilterOptions{Query: "a2|a4", Operator: "regex"}
+	isFiltered = true
+	b = applyActiveFilters(originalBuffer)
+	drawBuffer(b, bufferTable)
+	bufferTable.Select(1, 1)
+	press(t, "v j c c z z esc") // both visible rows, column 1
+	if originalBuffer.cont[2][1] != "zz" || originalBuffer.cont[4][1] != "zz" || originalBuffer.cont[3][1] != "b3" {
+		t.Errorf("bulk edit must reach the unfiltered rows: %v", column(originalBuffer, 1))
+	}
+	if !isFiltered || b.rowLen != 3 {
+		t.Errorf("the view stays filtered on column 0: filtered=%v rows=%d", isFiltered, b.rowLen)
+	}
 }

@@ -285,8 +285,10 @@ x: clear the cell; with a count, N cells to the right; in visual mode
 X: remove and copy to the clipboard: the current row, or the visual
     selection
 E: edit the cell in a vim line editor (see [Editing](#editing-1))
-i, a: edit the cell, inserting at the start or appending at the end
-cc: clear the cell and type its new value
+i, Ctrl-I, a: edit the cell, inserting at the start or appending at the end;
+    in visual mode the text goes into every selected cell
+cc: clear the cell and type its new value; in visual mode every selected
+    cell gets it
 u: undo the last edit; with a count, N edits
 W: write the table back to the file
 
@@ -467,6 +469,12 @@ Cells: `x` clears the cell under the cursor (`3x` three cells; in visual mode
     The cursor moves by code point: combining marks are drawn with their base
     character but count as positions of their own. Ctrl-C in the editor acts
     as Esc.
+Bulk edit: in visual mode `i` (or Ctrl-I), `a` and `cc` work like vim's
+    block insert. The editor opens on the first selected cell; what you type
+    is inserted at the start (`i`), appended (`a`) or replaces the value
+    (`cc`) in every selected cell when you press Esc or Enter, as one undo
+    step. Select five empty cells with `Ctrl-v`, press `Ctrl-I`, type, Esc:
+    all five hold the text.
 Filters: an edit made in a filtered view changes the unfiltered table too. A
     removed column takes its filter and width limit with it, and `u` brings
     them back. Sorting is an edit as well: it applies to the whole table, is
