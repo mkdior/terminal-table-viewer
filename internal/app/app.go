@@ -62,6 +62,7 @@ func startAsyncUpdateHandler(updateChan <-chan bool, doneChan <-chan error) {
 					status = "Stopped after " + strconv.Itoa(b.rowLen) + " rows: " + err.Error()
 				}
 				app.QueueUpdateDraw(func() {
+					loadStopped = err != nil
 					drawBuffer(b, bufferTable)
 					updateFooterWithStatus(status)
 				})
@@ -150,6 +151,7 @@ func loadAndDisplaySync(loader func(*Buffer) error, source string) error {
 		}
 		// Rows loaded before the cap stay viewable; say so in the footer.
 		statusMessage = "Stopped after " + strconv.Itoa(b.rowLen) + " rows: " + err.Error()
+		loadStopped = true
 	}
 
 	setupFreezeMode(b)
@@ -247,7 +249,7 @@ func Execute(version string) {
 				}
 			} else {
 				// PIPE MODE
-				args.FileName = "From Shell Pipe"
+				args.FileName = pipeSourceName
 
 				if useAsync {
 					err = loadAndDisplayAsync(func(b *Buffer, updateChan chan<- bool, doneChan chan<- error) {

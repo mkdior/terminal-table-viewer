@@ -305,12 +305,14 @@ func runAction(act action, rawCount, count int) {
 		clearCells(row, col, row, col+count-1)
 	case actUndo:
 		undoEdits(count)
+	case actWrite:
+		writeTable()
 	case actStats:
 		showCurrentColumnStats()
 	case actHelp:
 		showHelpDialog()
 	case actQuit:
-		app.Stop()
+		requestQuit()
 	}
 }
 

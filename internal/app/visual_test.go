@@ -236,13 +236,13 @@ func TestRewrittenHandlersThroughKeys(t *testing.T) {
 	if col != 0 {
 		t.Fatalf("l from the last column should wrap to column 0, got %d", col)
 	}
-	press(t, "W")
+	press(t, "_")
 	if _, limited := wrappedColumns[col]; !limited {
-		t.Error("W must add a width limit on the current column")
+		t.Error("_ must add a width limit on the current column")
 	}
-	press(t, "W")
+	press(t, "_")
 	if _, limited := wrappedColumns[col]; limited {
-		t.Error("W again must remove the width limit")
+		t.Error("_ again must remove the width limit")
 	}
 
 	// type toggle cycles String -> Number -> Date -> String

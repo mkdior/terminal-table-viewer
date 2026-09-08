@@ -313,6 +313,7 @@ func openFileSource(fn string) (loadSource, error) {
 	if !fileInfo.IsDir() && !strings.HasSuffix(fn, ".gz") {
 		fileSize = fileInfo.Size()
 	}
+	sourceStat = fileInfo // the write path refuses if the file changes meanwhile
 	scanner, closer, err := getFileScanner(fn)
 	if err != nil {
 		return loadSource{}, err

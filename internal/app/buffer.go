@@ -82,6 +82,7 @@ type Buffer struct {
 	internCols   []bool            // Track which columns use interning
 	memoryUsage  int64             // Current estimated memory usage in bytes
 	maxMemory    int64             // Maximum allowed memory in bytes (0 = no limit)
+	padded       bool              // Some row was shorter than the table and padded with NaN
 }
 
 const (
@@ -269,6 +270,9 @@ func (b *Buffer) resizeColUnsafe(n int) {
 
 // padRowUnsafe appends "NaN" to row i until it is colLen wide (lock must be held)
 func (b *Buffer) padRowUnsafe(i int) {
+	if len(b.cont[i]) < b.colLen {
+		b.padded = true
+	}
 	for len(b.cont[i]) < b.colLen {
 		b.trackWidthUnsafe(len(b.cont[i]), "NaN")
 		b.cont[i] = append(b.cont[i], "NaN")
@@ -1099,6 +1103,13 @@ func (b *Buffer) restoreOrder(order [][]string) {
 		return
 	}
 	copy(b.cont, order)
+}
+
+// wasPadded reports whether any row was padded with NaN to the table width.
+func (b *Buffer) wasPadded() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.padded
 }
 
 // trackWidth records the display width of a cell in column col (thread-safe).

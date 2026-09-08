@@ -443,6 +443,15 @@ func drawUI(b *Buffer) error {
 		screenRef = screen
 		return false
 	})
+	// Ctrl-C would stop the application behind the keymap's back; send it
+	// through the quit flow so pending edits get their write/discard prompt.
+	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyCtrlC {
+			requestQuit()
+			return nil
+		}
+		return event
+	})
 
 	//UI init - add pages to UI container
 	UI = tview.NewPages()

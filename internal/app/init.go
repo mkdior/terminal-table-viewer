@@ -108,6 +108,7 @@ func initView() {
 	pendingOp, pendingOpCount = "", 0
 	visual = visualOff
 	edits = nil
+	sourceStat, loadStopped = nil, false
 }
 
 // stop UI
