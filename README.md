@@ -267,6 +267,9 @@ s: sort ascending by the current column (an edit: `u` undoes it)
 S: sort descending by the current column
 t: toggle the column type (String, Number, Date)
 _: toggle the width limit on the current column
+zc, zo, za, zR: hide the current column behind a narrow marker (like a
+    closed fold), show it again, toggle, show all hidden columns; in visual
+    mode `zc` and `zo` act on the selected columns
 y: copy the current cell to the clipboard
 Y: copy the current row to the clipboard, cells separated by tabs
 v, Ctrl-v: visual mode; select a block of cells from here to the cursor
@@ -521,6 +524,16 @@ being `dl` (as in sc-im, the vim spreadsheet), `X` cuts to the clipboard, `W`
 writes and `I` shows statistics. The line editor's keys are vim's and are not
 remappable; the table keys are.
 
+### Hiding columns
+
+`zc` hides the column under the cursor (in visual mode the selected columns)
+the way vim closes a fold: the column collapses to a one-character dimmed
+marker (`»`) so its place stays visible, and the footer names it while the
+cursor is on it. `zo` shows it again, `za` toggles, `zR` shows every hidden
+column. Editing a cell in a hidden column opens it first. At least one column
+always stays visible. Hiding is a view setting: it is not written by `W`, not
+undone by `u`, and it follows its column when columns are removed or added.
+
 ### Column width limits
 
 Columns whose cells exceed 50 characters in the first 100 rows are limited to
@@ -591,7 +604,8 @@ Actions: `move_left`, `move_right`, `move_down`, `move_up`, `next_column`,
     `toggle_type`, `yank`, `yank_row`, `visual`, `visual_row`,
     `visual_swap`, `delete`, `cut`, `clear`, `edit`, `insert`, `append`,
     `change`, `paste`, `insert_row`, `open_row`, `insert_column`,
-    `open_column`, `undo`, `write`, `toggle_width`, `stats`, `help`, `quit`
+    `open_column`, `undo`, `write`, `toggle_width`, `fold_column`,
+    `unfold_column`, `toggle_fold`, `unfold_all`, `stats`, `help`, `quit`
 
 ```toml
 [keys]

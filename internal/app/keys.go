@@ -195,6 +195,18 @@ func dispatch(act action) {
 			visual = visualOff
 			pasteCells(r1, c1, r2, c2)
 			return
+		case actFoldColumn, actUnfoldColumn, actToggleFold:
+			_, c1, _, c2 := visualRect()
+			visual = visualOff
+			switch act {
+			case actFoldColumn:
+				foldColumns(c1, c2)
+			case actUnfoldColumn:
+				unfoldColumns(c1, c2)
+			default:
+				toggleFold(c1, c2)
+			}
+			return
 		case actInsertRow, actOpenRow, actInsertColumn, actOpenColumn:
 			r1, c1, r2, c2 := visualRect()
 			visual = visualOff
@@ -451,6 +463,14 @@ func runAction(act action, rawCount, count int) {
 		insertColumns(col, count, false)
 	case actOpenColumn:
 		insertColumns(col, count, true)
+	case actFoldColumn:
+		foldColumns(col, col+count-1)
+	case actUnfoldColumn:
+		unfoldColumns(col, col+count-1)
+	case actToggleFold:
+		toggleFold(col, col)
+	case actUnfoldAll:
+		unfoldAll()
 	case actUndo:
 		undoEdits(count)
 	case actEdit, actInsert, actAppend, actChange:

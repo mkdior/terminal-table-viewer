@@ -20,6 +20,7 @@ type edit struct {
 	names    []string              // header names of the removed columns, for the summary
 	filters  map[int]FilterOptions // filters that were on the removed columns
 	widths   map[int]int           // width limits that were on the removed columns
+	hidden   map[int]bool          // hidden flags that were on the removed columns
 	cells    []cellChange          // cells changed
 	order    [][]string            // row order before a sort
 	sortedBy string                // "Age ascending", for the summary
@@ -320,6 +321,7 @@ func deleteColumns(c1, c2 int, toClipboard bool) {
 	e := edit{colAt: c1, cols: base.removeColumns(c1, c2), names: names}
 	e.filters = dropColumnKeys(activeFilters, c1, c2)
 	e.widths = dropColumnKeys(wrappedColumns, c1, c2)
+	e.hidden = dropColumnKeys(hiddenCols, c1, c2)
 	edits = append(edits, e)
 	editStatus(did + refreshView(row, c1))
 }
@@ -465,6 +467,7 @@ func insertColumns(c, n int, right bool) {
 	prev := base.insertColumns(at, cols)
 	restoreColumnKeys(activeFilters, at, n, nil)
 	restoreColumnKeys(wrappedColumns, at, n, nil)
+	restoreColumnKeys(hiddenCols, at, n, nil)
 	edits = append(edits, edit{addedAt: at, addedN: n, prevRows: prev})
 	row, _ := bufferTable.GetSelection()
 	editStatus("Added " + plural(n, "column") + refreshView(row, at))
@@ -494,6 +497,7 @@ func undoEdits(n int) {
 			base.insertColumns(e.colAt, e.cols)
 			restoreColumnKeys(activeFilters, e.colAt, len(e.cols), e.filters)
 			restoreColumnKeys(wrappedColumns, e.colAt, len(e.cols), e.widths)
+			restoreColumnKeys(hiddenCols, e.colAt, len(e.cols), e.hidden)
 			col = e.colAt
 			did = append(did, plural(len(e.cols), "column")+" ("+strings.Join(e.names, ", ")+") restored")
 		case len(e.cells) > 0:
@@ -523,6 +527,7 @@ func undoEdits(n int) {
 			base.undoInsertColumns(e.addedAt, e.addedN, e.prevRows)
 			dropColumnKeys(activeFilters, e.addedAt, e.addedAt+e.addedN-1)
 			dropColumnKeys(wrappedColumns, e.addedAt, e.addedAt+e.addedN-1)
+			dropColumnKeys(hiddenCols, e.addedAt, e.addedAt+e.addedN-1)
 			col = e.addedAt
 			did = append(did, plural(e.addedN, "added column")+" removed")
 		}

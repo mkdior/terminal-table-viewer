@@ -38,6 +38,12 @@ func startBulkEdit(how action, r1, c1, r2, c2 int) {
 		return
 	}
 	bufferTable.Select(r1, c1)
+	for c := c1; c <= c2; c++ {
+		if hiddenCols[c] {
+			unfoldColumns(c1, c2)
+			break
+		}
+	}
 	text := b.cont[r1][c1]
 	ed := newLineEditor(text)
 	switch how {
@@ -97,6 +103,9 @@ func startCellEdit(how action) {
 	row, col := bufferTable.GetSelection()
 	if row < firstDataRow(b) || row >= b.rowLen || col < 0 || col >= len(b.cont[row]) {
 		return
+	}
+	if hiddenCols[col] { // editing opens the fold, as in vim
+		unfoldColumns(col, col)
 	}
 	ed := newLineEditor(b.cont[row][col])
 	switch how {

@@ -141,6 +141,8 @@ func getHelpContent() string {
 	sb.WriteString("  directory on every write (see --dump-config).\n\n")
 
 	sb.WriteString(head("Tips") + "\n")
+	sb.WriteString("  zc hides a column behind a narrow marker like a closed fold, zo shows\n")
+	sb.WriteString("  it again, za toggles, zR shows all; editing a hidden cell opens it.\n")
 	sb.WriteString("  Long cells are cut at 50 characters; a cut cell shows its full value\n")
 	sb.WriteString("  in a floating box while selected. Keys can be changed in the config\n")
 	sb.WriteString("  file; see ttv --dump-config for the defaults.\n\n")

@@ -14,6 +14,9 @@ import (
 // buildCursorPosStr builds the cursor position string (without filter info now)
 func buildCursorPosStr(row, column int) string {
 	posStr := "Column Type: " + type2name(b.getColType(column)) + "  |  " + strconv.Itoa(row) + "," + strconv.Itoa(column) + "  "
+	if hiddenCols[column] {
+		posStr = "hidden: " + columnTitle(column) + "  |  " + posStr
+	}
 	return posStr
 }
 
@@ -219,6 +222,11 @@ func (c *bufferContent) buildCell(r, col int) *tview.TableCell {
 		if colWidth > maxWidth {
 			colWidth = maxWidth
 		}
+	}
+	// A hidden column collapses to a dimmed marker, like a closed fold
+	if hiddenCols[col] {
+		cellText, colWidth, maxWidth = foldMarker, 1, 1
+		color, attributes = theme.Dim, tcell.AttrNone
 	}
 
 	// Pad to the column's widest cell so the column keeps the same width

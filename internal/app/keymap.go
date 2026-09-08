@@ -59,6 +59,10 @@ const (
 	actOpenRow      action = "open_row"
 	actInsertColumn action = "insert_column"
 	actOpenColumn   action = "open_column"
+	actFoldColumn   action = "fold_column"
+	actUnfoldColumn action = "unfold_column"
+	actToggleFold   action = "toggle_fold"
+	actUnfoldAll    action = "unfold_all"
 )
 
 // actionInfo describes an action for the help dialog and the config file.
@@ -117,6 +121,10 @@ var actionCatalog = []struct {
 	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
 	{actionInfo{actWrite, "Edit", "Write the table back to the file (the original is kept in the backup directory)", false}, []string{"W"}},
 	{actionInfo{actToggleWidth, "View", "Toggle the 50 character width limit on the current column", false}, []string{"_"}},
+	{actionInfo{actFoldColumn, "View", "Hide the current column behind a narrow marker, like a closed fold; in visual mode the selected columns", false}, []string{"z c"}},
+	{actionInfo{actUnfoldColumn, "View", "Show the hidden column under the cursor again; in visual mode the selected columns", false}, []string{"z o"}},
+	{actionInfo{actToggleFold, "View", "Hide the current column, or show it when hidden", false}, []string{"z a"}},
+	{actionInfo{actUnfoldAll, "View", "Show every hidden column", false}, []string{"z R"}},
 	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"I"}},
 	{actionInfo{actHelp, "View", "Show this help", false}, []string{"?"}},
 	{actionInfo{actQuit, "View", "Quit", false}, []string{"q"}},

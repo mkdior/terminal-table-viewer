@@ -151,3 +151,81 @@ func TestCursorRowIsTinted(t *testing.T) {
 		t.Errorf("the header keeps its panel background: %v", got)
 	}
 }
+
+func TestHiddenColumnsFoldToAMarker(t *testing.T) {
+	screen := wideUI(t)
+	t.Cleanup(func() { hiddenCols = map[int]bool{} })
+	hiddenCols = map[int]bool{}
+	bufferTable.Select(1, 1)
+	press(t, "z c")
+	if !hiddenCols[1] || !strings.Contains(statusMessage, "Hid 1 column (header1)") || !strings.Contains(statusMessage, "zo shows") {
+		t.Fatalf("zc: hidden %v status %q", hiddenCols, statusMessage)
+	}
+	mainView.Draw(screen)
+	screen.Show()
+	out := screenText(screen)
+	header := strings.Split(out, "\n")[0]
+	if strings.Contains(header, "header1") || strings.Contains(out, "r1c1xxxx") || !strings.Contains(header, foldMarker) {
+		t.Errorf("a hidden column shows only its marker:\n%s", out)
+	}
+	if !strings.Contains(header, "header2") || !strings.Contains(header, "header5") {
+		t.Errorf("the freed space shows more columns:\n%s", out)
+	}
+	if !strings.HasPrefix(cursorPosStr, "hidden: header1") {
+		t.Errorf("the footer names the hidden column under the cursor: %q", cursorPosStr)
+	}
+	press(t, "z o")
+	if hiddenCols[1] || !strings.Contains(statusMessage, "Showing 1 column (header1)") {
+		t.Errorf("zo: %v %q", hiddenCols, statusMessage)
+	}
+	press(t, "z a z a")
+	if hiddenCols[1] {
+		t.Error("za twice leaves the column visible")
+	}
+	press(t, "v l l z c") // three columns at once
+	if len(hiddenCols) != 3 || visual != visualOff {
+		t.Errorf("visual zc: %v", hiddenCols)
+	}
+	press(t, "z R")
+	if len(hiddenCols) != 0 {
+		t.Errorf("zR shows all: %v", hiddenCols)
+	}
+	press(t, "0 1 1 z c") // a count hides several; but never every column
+	if len(hiddenCols) != 11 || hiddenCols[11] {
+		t.Errorf("11zc from column 0: %v", hiddenCols)
+	}
+	press(t, "$ z c")
+	if statusMessage != "Cannot hide every column" || !hiddenCols[0] {
+		t.Errorf("the last visible column stays: %q", statusMessage)
+	}
+	press(t, "z R")
+
+	// Hidden flags follow their columns through removals, insertions and undo.
+	press(t, "0 l l z c") // hide column 2
+	press(t, "0 l d l")   // remove column 1: the hidden one is now column 1
+	if !hiddenCols[1] || len(hiddenCols) != 1 {
+		t.Errorf("after removing a column to the left: %v", hiddenCols)
+	}
+	press(t, "u")
+	if !hiddenCols[2] || len(hiddenCols) != 1 {
+		t.Errorf("after undoing the removal: %v", hiddenCols)
+	}
+	press(t, "0 i c esc esc") // insert a column at 0: the hidden one moves to 3
+	if !hiddenCols[3] || len(hiddenCols) != 1 {
+		t.Errorf("after inserting a column: %v", hiddenCols)
+	}
+	press(t, "u")
+	if !hiddenCols[2] {
+		t.Errorf("after undoing the insertion: %v", hiddenCols)
+	}
+
+	// Editing a hidden cell opens the fold first.
+	press(t, "0 l l E")
+	if hiddenCols[2] || cellEdit == nil {
+		t.Errorf("E on a hidden column opens it: hidden %v editor %v", hiddenCols, cellEdit)
+	}
+	press(t, "esc")
+	if !dirty() == false {
+		t.Error("hiding and showing are not edits")
+	}
+}
