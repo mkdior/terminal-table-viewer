@@ -454,3 +454,157 @@ func TestBuffer_TracksColumnWidths(t *testing.T) {
 		t.Error("displayWidth must count terminal cells")
 	}
 }
+
+// ========================================
+// Editing primitives
+// ========================================
+
+// editableBuffer builds a header plus n data rows of the form r<i>c<j>.
+func editableBuffer(t *testing.T, n int) *Buffer {
+	t.Helper()
+	data := [][]string{{"h0", "h1", "h2", "h3"}}
+	for i := 1; i <= n; i++ {
+		data = append(data, []string{"r" + I2S(i) + "c0", "r" + I2S(i) + "c1", "r" + I2S(i) + "c2", "r" + I2S(i) + "c3"})
+	}
+	buf, err := createNewBufferWithData(data, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf.rowFreeze = 1
+	return buf
+}
+
+func TestBuffer_RemoveAndInsertRows(t *testing.T) {
+	buf := editableBuffer(t, 5)
+	before := buf.memoryUsage
+	removed := buf.removeRows([][]string{buf.cont[2], buf.cont[4]}) // r2 and r4
+	if len(removed) != 2 || removed[0].index != 2 || removed[1].index != 4 {
+		t.Fatalf("removed = %+v", removed)
+	}
+	if buf.rowLen != 4 || len(buf.cont) != 4 || buf.cont[2][0] != "r3c0" || buf.cont[3][0] != "r5c0" {
+		t.Fatalf("rows after removal: %v", buf.cont)
+	}
+	if buf.memoryUsage >= before {
+		t.Error("memory estimate must shrink when rows are removed")
+	}
+	buf.insertRows(removed)
+	if buf.rowLen != 6 || buf.memoryUsage != before {
+		t.Fatalf("rowLen = %d, memory %d vs %d", buf.rowLen, buf.memoryUsage, before)
+	}
+	for i := 1; i <= 5; i++ {
+		if got := buf.cont[i][0]; got != "r"+I2S(i)+"c0" {
+			t.Errorf("row %d = %q after undo", i, got)
+		}
+	}
+	// Rows are matched by identity: an equal copy removes nothing.
+	copyRow := append([]string(nil), buf.cont[1]...)
+	if got := buf.removeRows([][]string{copyRow}); len(got) != 0 || buf.rowLen != 6 {
+		t.Errorf("a copy of a row must not match: removed %v", got)
+	}
+}
+
+func TestBuffer_RemoveRowsThroughFilteredView(t *testing.T) {
+	base := editableBuffer(t, 6)
+	view := base.filterByColumn(0, FilterOptions{Query: "r", Operator: "contains"})
+	view.cont = view.cont[:1+0] // keep header only, then pick two rows explicitly
+	view.cont = append(view.cont, base.cont[3], base.cont[5])
+	view.rowLen = 3
+	removed := base.removeRows(view.cont[1:])
+	if len(removed) != 2 || removed[0].index != 3 || removed[1].index != 5 || removed[1].row[0] != "r5c0" {
+		t.Fatalf("view rows must select the base rows they were filtered from: %+v", removed)
+	}
+	if base.rowLen != 5 || base.cont[3][0] != "r4c0" || base.cont[4][0] != "r6c0" {
+		t.Errorf("base after removal: %v", base.cont)
+	}
+}
+
+func TestBuffer_RemoveAndInsertColumns(t *testing.T) {
+	buf := editableBuffer(t, 3)
+	buf.colType[1], buf.colType[2] = colTypeFloat, colTypeDate
+	buf.interners = make([]*stringInterner, 4)
+	buf.internCols = []bool{false, true, false, false}
+	buf.interners[1] = newStringInterner()
+	rowBefore := buf.cont[1]
+	before := buf.memoryUsage
+
+	removed := buf.removeColumns(1, 2)
+	if len(removed) != 2 || removed[0].cells[0] != "h1" || removed[1].cells[3] != "r3c2" {
+		t.Fatalf("removed = %+v", removed)
+	}
+	if removed[0].colType != colTypeFloat || !removed[0].interned || removed[0].interner == nil || removed[1].colType != colTypeDate {
+		t.Errorf("column metadata not captured: %+v", removed)
+	}
+	if buf.colLen != 2 || len(buf.colType) != 3 || len(buf.colWidth) != 2 || len(buf.interners) != 2 || len(buf.internCols) != 2 {
+		t.Fatalf("metadata not shifted: colLen %d colType %v colWidth %v", buf.colLen, buf.colType, buf.colWidth)
+	}
+	for i, row := range buf.cont {
+		if len(row) != 2 || row[1] != []string{"h3", "r1c3", "r2c3", "r3c3"}[i] {
+			t.Errorf("row %d = %v", i, row)
+		}
+	}
+	if &buf.cont[1][0] != &rowBefore[0] {
+		t.Error("removing columns must keep the row's backing array")
+	}
+	if buf.memoryUsage >= before {
+		t.Error("memory estimate must shrink when columns are removed")
+	}
+
+	buf.insertColumns(1, removed)
+	if buf.colLen != 4 || buf.memoryUsage != before || buf.colType[1] != colTypeFloat || buf.colType[2] != colTypeDate || !buf.internCols[1] {
+		t.Fatalf("undo: colLen %d mem %d/%d types %v intern %v", buf.colLen, buf.memoryUsage, before, buf.colType, buf.internCols)
+	}
+	for i, row := range buf.cont {
+		want := []string{"h0", "h1", "h2", "h3"}
+		if i > 0 {
+			want = []string{"r" + I2S(i) + "c0", "r" + I2S(i) + "c1", "r" + I2S(i) + "c2", "r" + I2S(i) + "c3"}
+		}
+		if !reflect.DeepEqual(row, want) {
+			t.Errorf("row %d = %v, want %v", i, row, want)
+		}
+	}
+	if &buf.cont[1][0] != &rowBefore[0] {
+		t.Error("restoring columns must reuse the row's backing array")
+	}
+
+	if got := buf.removeColumns(0, 3); got != nil || buf.colLen != 4 {
+		t.Error("removing every column must be refused")
+	}
+	if got := buf.removeColumns(2, 0); len(got) != 3 || buf.colLen != 1 || buf.cont[2][0] != "r2c3" {
+		t.Errorf("a reversed, clamped range must remove 3 columns and keep the last: %v", buf.cont)
+	}
+}
+
+func TestBuffer_SetCellSharedWithView(t *testing.T) {
+	base := editableBuffer(t, 3)
+	view := base.filterByColumn(0, FilterOptions{Query: "r2", Operator: "contains"})
+	if view.rowLen != 2 {
+		t.Fatalf("view rows = %d", view.rowLen)
+	}
+	base.setCell(view.cont[1], 2, "a much longer value")
+	if base.cont[2][2] != "a much longer value" {
+		t.Error("a cell set through a view row must change the base buffer")
+	}
+	if base.columnWidth(2) != len("a much longer value") {
+		t.Errorf("column width = %d", base.columnWidth(2))
+	}
+	base.setCell(view.cont[1], 9, "x") // out of range: ignored
+}
+
+func TestCutAndInsertSlice(t *testing.T) {
+	s := cutSlice([]int{0, 1, 2, 3, 4}, 1, 2)
+	if !reflect.DeepEqual(s, []int{0, 3, 4}) {
+		t.Errorf("cutSlice = %v", s)
+	}
+	if got := cutSlice([]int{0, 1}, 5, 9); !reflect.DeepEqual(got, []int{0, 1}) {
+		t.Errorf("cutSlice past the end = %v", got)
+	}
+	if got := cutSlice([]int{0, 1, 2}, 1, 9); !reflect.DeepEqual(got, []int{0}) {
+		t.Errorf("cutSlice clamped = %v", got)
+	}
+	if got := insertSlice([]int{0, 3, 4}, 1, []int{1, 2}); !reflect.DeepEqual(got, []int{0, 1, 2, 3, 4}) {
+		t.Errorf("insertSlice = %v", got)
+	}
+	if got := insertSlice([]int{0}, 7, []int{1}); !reflect.DeepEqual(got, []int{0, 1}) {
+		t.Errorf("insertSlice clamped = %v", got)
+	}
+}

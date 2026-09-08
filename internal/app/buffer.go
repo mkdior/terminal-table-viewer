@@ -894,6 +894,240 @@ func (b *Buffer) cellBlock(r1, c1, r2, c2 int) [][]string {
 	return out
 }
 
+// Row slices are only ever re-sliced within their backing array: removeColumns
+// shifts cells left and shortens, insertColumns grows back within the
+// capacity. A row slice therefore identifies a row for the lifetime of the
+// buffer, which is what removeRows (matching a filtered view's rows against
+// the buffer they came from) and the undo of cell edits rely on.
+
+// removedRow is a row taken out of the buffer with the index it had, so undo
+// can put it back in place.
+type removedRow struct {
+	index int
+	row   []string
+}
+
+// removedCol is a column taken out of the buffer with everything the buffer
+// knew about it, so undo can put it back.
+type removedCol struct {
+	cells    []string // one per row, header included
+	colType  int
+	width    int
+	interner *stringInterner
+	interned bool
+}
+
+// removeRows takes the given rows out of the buffer. Rows are matched by
+// identity (the address of their first cell), not by content, so the rows of
+// a filtered view select the same rows in the buffer they were filtered from
+// (filterByColumn shares the row slices). The removed rows are returned with
+// their former indexes, ascending.
+func (b *Buffer) removeRows(rows [][]string) []removedRow {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	drop := make(map[*string]struct{}, len(rows))
+	for _, r := range rows {
+		if len(r) > 0 {
+			drop[&r[0]] = struct{}{}
+		}
+	}
+	var removed []removedRow
+	kept := 0
+	for i, row := range b.cont {
+		if len(row) > 0 {
+			if _, hit := drop[&row[0]]; hit {
+				removed = append(removed, removedRow{i, row})
+				b.memoryUsage -= b.estimateRowSize(row)
+				continue
+			}
+		}
+		b.cont[kept] = row
+		kept++
+	}
+	clear(b.cont[kept:])
+	b.cont = b.cont[:kept]
+	b.rowLen = kept
+	return removed
+}
+
+// insertRows puts rows removed by removeRows back at their former indexes in
+// one merge pass from the back; rows must be ordered by index ascending, as
+// removeRows returns them.
+func (b *Buffer) insertRows(rows []removedRow) {
+	if len(rows) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	src := len(b.cont) - 1
+	n := len(b.cont) + len(rows)
+	if cap(b.cont) >= n {
+		b.cont = b.cont[:n]
+	} else {
+		b.cont = append(b.cont, make([][]string, len(rows))...)
+	}
+	for dst := n - 1; dst >= 0; dst-- {
+		if r := len(rows) - 1; r >= 0 && (rows[r].index >= dst || src < 0) {
+			b.cont[dst] = rows[r].row
+			b.memoryUsage += b.estimateRowSize(rows[r].row)
+			rows = rows[:r]
+			continue
+		}
+		b.cont[dst] = b.cont[src]
+		src--
+	}
+	b.rowLen = n
+}
+
+// removeColumns takes columns c1..c2 (inclusive, clamped) out of every row,
+// shifting the cells to their right down in place. It refuses to remove every
+// column and returns the removed columns in order, or nil.
+func (b *Buffer) removeColumns(c1, c2 int) []removedCol {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if c1 > c2 {
+		c1, c2 = c2, c1
+	}
+	c1, c2 = clampInt(c1, 0, b.colLen-1), clampInt(c2, 0, b.colLen-1)
+	k := c2 - c1 + 1
+	if b.colLen == 0 || k >= b.colLen {
+		return nil
+	}
+	removed := make([]removedCol, k)
+	for j := range removed {
+		c := c1 + j
+		removed[j].cells = make([]string, b.rowLen)
+		if c < len(b.colType) {
+			removed[j].colType = b.colType[c]
+		}
+		if c < len(b.colWidth) {
+			removed[j].width = b.colWidth[c]
+		}
+		if c < len(b.interners) {
+			removed[j].interner = b.interners[c]
+		}
+		if c < len(b.internCols) {
+			removed[j].interned = b.internCols[c]
+		}
+	}
+	for i, row := range b.cont {
+		if c1 >= len(row) {
+			continue
+		}
+		end := min(c2+1, len(row))
+		for c := c1; c < end; c++ {
+			removed[c-c1].cells[i] = row[c]
+			b.memoryUsage -= int64(len(row[c])) + stringOverheadBytes + 8
+		}
+		n := c1 + copy(row[c1:], row[end:])
+		clear(row[n:])
+		b.cont[i] = row[:n]
+	}
+	b.colType = cutSlice(b.colType, c1, c2)
+	b.colWidth = cutSlice(b.colWidth, c1, c2)
+	b.interners = cutSlice(b.interners, c1, c2)
+	b.internCols = cutSlice(b.internCols, c1, c2)
+	b.colLen -= k
+	return removed
+}
+
+// insertColumns puts columns removed by removeColumns back at index at. Rows
+// grow within their capacity, so their slices keep their identity.
+func (b *Buffer) insertColumns(at int, cols []removedCol) {
+	k := len(cols)
+	if k == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	at = clampInt(at, 0, b.colLen)
+	for i, row := range b.cont {
+		n := len(row)
+		if cap(row) >= n+k {
+			row = row[:n+k]
+		} else {
+			// Cannot happen for rows that were shortened by removeColumns; kept
+			// so a foreign row degrades to a copy instead of a panic.
+			row = append(row, make([]string, k)...)
+		}
+		copy(row[at+k:], row[at:n])
+		for j, col := range cols {
+			cell := ""
+			if i < len(col.cells) {
+				cell = col.cells[i]
+			}
+			row[at+j] = cell
+			b.memoryUsage += int64(len(cell)) + stringOverheadBytes + 8
+		}
+		b.cont[i] = row
+	}
+	types, widths := make([]int, k), make([]int, k)
+	interners, interned := make([]*stringInterner, k), make([]bool, k)
+	for j, col := range cols {
+		types[j], widths[j], interners[j], interned[j] = col.colType, col.width, col.interner, col.interned
+	}
+	b.colType = insertSlice(b.colType, at, types)
+	b.colWidth = insertSlice(b.colWidth, at, widths)
+	if b.interners != nil {
+		b.interners = insertSlice(b.interners, at, interners)
+		b.internCols = insertSlice(b.internCols, at, interned)
+	}
+	b.colLen += k
+}
+
+// setCell replaces the value of one cell of row (a row slice of this buffer)
+// and keeps the column width, interning and memory estimate current.
+func (b *Buffer) setCell(row []string, col int, value string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if col < 0 || col >= len(row) {
+		return
+	}
+	value = b.internValue(col, value)
+	b.memoryUsage += int64(len(value)) - int64(len(row[col]))
+	row[col] = value
+	b.trackWidthUnsafe(col, value)
+}
+
+// restoreOrder puts the rows back in a previously recorded order. The order
+// must hold exactly the rows the buffer holds now (undo guarantees it by
+// reverting later edits first); otherwise the buffer is left alone.
+func (b *Buffer) restoreOrder(order [][]string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(order) != len(b.cont) {
+		return
+	}
+	copy(b.cont, order)
+}
+
+// trackWidth records the display width of a cell in column col (thread-safe).
+func (b *Buffer) trackWidth(col int, cell string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.trackWidthUnsafe(col, cell)
+}
+
+// cutSlice removes s[c1..c2] (inclusive, clamped to the slice) in place.
+func cutSlice[T any](s []T, c1, c2 int) []T {
+	if c1 >= len(s) {
+		return s
+	}
+	end := min(c2+1, len(s))
+	n := c1 + copy(s[c1:], s[end:])
+	clear(s[n:])
+	return s[:n]
+}
+
+// insertSlice inserts vals into s at index at (clamped to the slice).
+func insertSlice[T any](s []T, at int, vals []T) []T {
+	at = clampInt(at, 0, len(s))
+	s = append(s, vals...)
+	copy(s[at+len(vals):], s[at:len(s)-len(vals)])
+	copy(s[at:], vals)
+	return s
+}
+
 // FilterOptions defines the parameters for a column filter.
 type FilterOptions struct {
 	Query         string
