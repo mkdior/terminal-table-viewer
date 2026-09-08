@@ -50,6 +50,10 @@ const (
 	actClear        action = "clear"
 	actUndo         action = "undo"
 	actWrite        action = "write"
+	actEdit         action = "edit"
+	actInsert       action = "insert"
+	actAppend       action = "append"
+	actChange       action = "change"
 )
 
 // actionInfo describes an action for the help dialog and the config file.
@@ -96,10 +100,14 @@ var actionCatalog = []struct {
 	{actionInfo{actDelete, "Edit", "Remove: dd the row, d+motion the rows (dj, dG) or columns (dl, d$) it spans; in visual mode the selected rows (V) or columns (v)", false}, []string{"d"}},
 	{actionInfo{actCut, "Edit", "Remove and copy to the clipboard: the row, or the visual selection", false}, []string{"X"}},
 	{actionInfo{actClear, "Edit", "Clear the cell; with a count, N cells to the right; in visual mode the selected cells", false}, []string{"x"}},
+	{actionInfo{actEdit, "Edit", "Edit the cell in a vim line editor: Enter applies, Esc cancels", false}, []string{"E"}},
+	{actionInfo{actInsert, "Edit", "Edit the cell, inserting at the start", false}, []string{"i"}},
+	{actionInfo{actAppend, "Edit", "Edit the cell, appending at the end", false}, []string{"a"}},
+	{actionInfo{actChange, "Edit", "Clear the cell and type its new value", false}, []string{"c c"}},
 	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
 	{actionInfo{actWrite, "Edit", "Write the table back to the file (the original is kept in the backup directory)", false}, []string{"W"}},
 	{actionInfo{actToggleWidth, "View", "Toggle the 50 character width limit on the current column", false}, []string{"_"}},
-	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"i"}},
+	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"I"}},
 	{actionInfo{actHelp, "View", "Show this help", false}, []string{"?"}},
 	{actionInfo{actQuit, "View", "Quit", false}, []string{"q"}},
 }

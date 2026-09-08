@@ -77,6 +77,10 @@ func (p *cellPreview) Draw(screen tcell.Screen) {
 		currentContent.beginFrame()
 	}
 	p.Frame.Draw(screen)
+	if cellEdit != nil {
+		cellEdit.draw(screen)
+		return
+	}
 	if p.text == "" || !bufferTable.HasFocus() {
 		return
 	}

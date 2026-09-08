@@ -23,7 +23,7 @@ func setupVisualTable(t *testing.T) {
 	oldB, oldTable, oldPage, oldView, oldKeys := b, bufferTable, mainPage, mainView, keys
 	t.Cleanup(func() {
 		b, bufferTable, mainPage, mainView, keys = oldB, oldTable, oldPage, oldView, oldKeys
-		visual, pendingCount, pendingChord = visualOff, 0, nil
+		visual, pendingCount, pendingChord, cellEdit = visualOff, 0, nil, nil
 	})
 	b = buf
 	mainPage, mainView = nil, nil
@@ -143,8 +143,8 @@ func TestSingleYanks(t *testing.T) {
 
 func TestUnboundKeysNeverReachTview(t *testing.T) {
 	setupVisualTable(t)
-	a, _ := parseChord("a")
-	keys.set(actMoveLeft, [][]keyStroke{a}) // Left is no longer bound
+	m, _ := parseChord("m")
+	keys.set(actMoveLeft, [][]keyStroke{m}) // Left is no longer bound
 	keys.set(actCancel, nil)                // Esc is unbound; it used to quit via tview's done func
 
 	bufferTable.Select(2, 2)
@@ -156,7 +156,7 @@ func TestUnboundKeysNeverReachTview(t *testing.T) {
 	if row, col := bufferTable.GetSelection(); row != 2 || col != 2 {
 		t.Errorf("unbound keys must not move the cursor, now at %d,%d", row, col)
 	}
-	press(t, "a")
+	press(t, "m")
 	if _, col := bufferTable.GetSelection(); col != 1 {
 		t.Errorf("the remapped key must move left, col = %d", col)
 	}

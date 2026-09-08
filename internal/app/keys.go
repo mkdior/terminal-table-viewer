@@ -31,6 +31,12 @@ var (
 // Home/End, Escape) cannot bypass the keymap once a user remaps them.
 // Ctrl-C is routed to the quit flow by the application-level capture.
 func handleTableKey(event *tcell.EventKey) *tcell.EventKey {
+	// A cell being edited takes every key until Enter or Esc closes it.
+	if cellEdit != nil {
+		cellEdit.handleKey(event)
+		return nil
+	}
+
 	// Vim-style count prefix: digits accumulate and the next action uses
 	// them (5j, 3l, 12G). A leading 0 is left to the keymap (first_column).
 	if event.Key() == tcell.KeyRune && pushCountDigit(event.Rune()) {
@@ -305,6 +311,8 @@ func runAction(act action, rawCount, count int) {
 		clearCells(row, col, row, col+count-1)
 	case actUndo:
 		undoEdits(count)
+	case actEdit, actInsert, actAppend, actChange:
+		startCellEdit(act)
 	case actWrite:
 		writeTable()
 	case actStats:

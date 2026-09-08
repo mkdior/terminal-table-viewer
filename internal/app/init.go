@@ -109,6 +109,7 @@ func initView() {
 	visual = visualOff
 	edits = nil
 	sourceStat, loadStopped = nil, false
+	cellEdit, lineRegister, lineLastChange = nil, nil, nil
 }
 
 // stop UI
