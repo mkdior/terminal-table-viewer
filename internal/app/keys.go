@@ -281,12 +281,15 @@ func motionTarget(act action, rawCount, count, row, col int) (r, c int, ok bool)
 func runAction(act action, rawCount, count int) {
 	row, col := bufferTable.GetSelection()
 	if r, c, ok := motionTarget(act, rawCount, count, row, col); ok {
+		// tview scrolls just enough to show the selection when it draws. Its
+		// ScrollToBeginning/ScrollToEnd are not used: they zero the column
+		// offset, so gg and G made the columns on screen jump. A vertical
+		// motion keeps the horizontal scroll exactly where it was.
+		_, colOffset := bufferTable.GetOffset()
 		bufferTable.Select(r, c)
-		switch {
-		case act == actFirstRow && rawCount == 0:
-			bufferTable.ScrollToBeginning()
-		case act == actLastRow && rawCount == 0:
-			bufferTable.ScrollToEnd()
+		if c == col {
+			rowOffset, _ := bufferTable.GetOffset()
+			bufferTable.SetOffset(rowOffset, colOffset)
 		}
 		return
 	}
