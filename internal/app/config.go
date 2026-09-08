@@ -25,9 +25,15 @@ import (
 type Config struct {
 	Keys      map[string]keyList `toml:"keys"`
 	Theme     map[string]string  `toml:"theme"`
+	Movement  MovementConfig     `toml:"movement"`
 	Clipboard ClipboardConfig    `toml:"clipboard"`
 	Preview   PreviewConfig      `toml:"preview"`
 	Backup    BackupConfig       `toml:"backup"`
+}
+
+// MovementConfig tunes how the cursor moves.
+type MovementConfig struct {
+	WrapColumns bool `toml:"wrap_columns"` // h, l, w and b continue past the first and last column (default false)
 }
 
 // BackupConfig controls where the previous version of a written file is kept.
@@ -163,6 +169,7 @@ func applyConfig(cfg Config, themeFlag string) error {
 	}
 	theme = t
 	keys = km
+	wrapColumns = cfg.Movement.WrapColumns
 	clipboardOverride = strings.TrimSpace(cfg.Clipboard.Command)
 	clipboardOSC52 = cfg.Clipboard.OSC52 == nil || *cfg.Clipboard.OSC52
 	pos, err := parsePreviewPosition(cfg.Preview.Position)
@@ -254,6 +261,10 @@ func dumpConfig(w io.Writer) error {
 	for _, role := range themeRoleNames {
 		fmt.Fprintf(&sb, "%-11s = %q\n", role, colorSpec(*roles[role]))
 	}
+	sb.WriteString("\n# Movement: with wrap_columns, h, l, w and b continue from the last column to the\n")
+	sb.WriteString("# first and back; off, they stop at the edges as in vim.\n\n")
+	sb.WriteString("[movement]\n")
+	sb.WriteString("wrap_columns = false\n")
 	sb.WriteString("\n# Clipboard: by default ttv detects the system (Windows and WSL, macOS, Wayland,\n")
 	sb.WriteString("# X11, Termux) and also sends the OSC 52 escape. command replaces the detection\n")
 	sb.WriteString("# with a program that reads the text on stdin, e.g. \"xclip -selection clipboard\".\n\n")

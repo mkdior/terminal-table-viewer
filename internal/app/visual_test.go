@@ -249,11 +249,15 @@ func TestRewrittenHandlersThroughKeys(t *testing.T) {
 	}
 
 	// width limit toggle on the current column (the search left the cursor in
-	// the last column, so l wraps around to column 0)
+	// the last column; l stops there, and 0 goes back to the first column)
 	press(t, "l")
+	if _, col := bufferTable.GetSelection(); col != 3 {
+		t.Fatalf("l from the last column should stay in column 3, got %d", col)
+	}
+	press(t, "0")
 	_, col := bufferTable.GetSelection()
 	if col != 0 {
-		t.Fatalf("l from the last column should wrap to column 0, got %d", col)
+		t.Fatalf("0 should go to column 0, got %d", col)
 	}
 	press(t, "_")
 	if _, limited := wrappedColumns[col]; !limited {

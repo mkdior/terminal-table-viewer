@@ -177,8 +177,8 @@ shows the bindings that are active.
 
 ### Movement
 
-- `h`, `Left`: move left; wraps to the last column from the first
-- `l`, `Right`: move right; wraps to the first column from the last
+- `h`, `Left`: move left
+- `l`, `Right`: move right
 - `j`, `Down`: move down
 - `k`, `Up`: move up
 - `w`: next column
@@ -199,7 +199,10 @@ Counts work as in vim: a number before a motion repeats it (`5j`, `3l`, `2w`,
 rows. `0` on its own still goes to the first column. Vertical motions stop at
 the first data row; the frozen header is never selected, and an overshooting
 count such as `200k` in a 150-row file lands on the first row. Vertical
-motions keep the horizontal scroll where it was.
+motions keep the horizontal scroll where it was. Horizontal motions stop at
+the first and last column, as in vim; `wrap_columns = true` in the
+`[movement]` section of the config file makes `h`, `l`, `w` and `b` continue
+from one edge to the other instead.
 
 ### Search and filter
 
@@ -649,6 +652,17 @@ Roles:
 name       = "subcore"
 accent     = "colour208"
 alert      = "#ff5f5f"
+```
+
+### [movement]
+
+- `wrap_columns`: `false` (default) or `true`; whether `h`, `l`, `w` and `b`
+  continue from the last column to the first and back instead of stopping at
+  the edges as in vim.
+
+```toml
+[movement]
+wrap_columns = true
 ```
 
 ### [preview]

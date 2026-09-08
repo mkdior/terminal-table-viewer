@@ -118,6 +118,29 @@ func TestDumpConfigRoundTrips(t *testing.T) {
 	}
 }
 
+func TestApplyConfigWrapColumns(t *testing.T) {
+	resetKeysAndTheme(t)
+	oldWrap := wrapColumns
+	t.Cleanup(func() { wrapColumns = oldWrap })
+
+	var cfg Config
+	if _, err := toml.Decode("[movement]\nwrap_columns = true\n", &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyConfig(cfg, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !wrapColumns {
+		t.Error("wrap_columns = true must turn wrapping on")
+	}
+	if err := applyConfig(Config{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if wrapColumns {
+		t.Error("wrapping must be off by default")
+	}
+}
+
 func TestLoadConfigMissingFile(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "none.toml")
 	if _, err := loadConfig(missing, false); err != nil {

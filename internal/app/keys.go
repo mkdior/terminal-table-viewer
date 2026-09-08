@@ -358,15 +358,29 @@ func operatorRange(motion action, rawCount, count, row, col int) (rows bool, lo,
 	return true, min(row, r), max(row, r), true
 }
 
+// wrapColumns makes h, l, w and b continue from the last column to the first
+// and back instead of stopping at the edge; the [movement] config section sets
+// it, and vim's default (no wrap) is the default.
+var wrapColumns bool
+
+// stepCol moves col by delta over n columns, stopping at the first and last
+// column unless wrapColumns is on.
+func stepCol(col, delta, n int) int {
+	if wrapColumns {
+		return wrapCol(col+delta, n)
+	}
+	return clampInt(col+delta, 0, n-1)
+}
+
 // motionTarget returns where a motion moves the cursor from row, col; ok is
 // false for actions that are not motions over the table.
 func motionTarget(act action, rawCount, count, row, col int) (r, c int, ok bool) {
 	firstRow, lastRow, numCols := firstDataRow(b), b.rowLen-1, b.colLen
 	switch act {
 	case actMoveLeft, actPrevColumn:
-		return row, wrapCol(col-count, numCols), true
+		return row, stepCol(col, -count, numCols), true
 	case actMoveRight, actNextColumn:
-		return row, wrapCol(col+count, numCols), true
+		return row, stepCol(col, count, numCols), true
 	case actMoveDown:
 		return clampInt(row+count, firstRow, lastRow), col, true
 	case actMoveUp:
