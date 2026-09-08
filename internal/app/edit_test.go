@@ -26,6 +26,8 @@ func setupEditTable(t *testing.T) {
 	edits = nil
 	args.FileName = "table.csv"
 	loadProgress.IsComplete.Store(true)
+	// Removals copy to the clipboard; give them a tool so the footer is stable.
+	stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
 }
 
 // column returns column c of buf as a slice, header included.
@@ -179,6 +181,7 @@ func TestDeleteOperatorCancels(t *testing.T) {
 
 func TestVisualDeleteAndClear(t *testing.T) {
 	setupEditTable(t)
+	ran := stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
 	press(t, "V j d") // rows a1, a2
 	if got := joined(column(b, 0)); got != "h1 a3 a4" || visual != visualOff {
 		t.Fatalf("V j d: %q visual=%v", got, visual)
@@ -212,44 +215,66 @@ func TestVisualDeleteAndClear(t *testing.T) {
 		t.Errorf("2x: %v", b.cont[2])
 	}
 	press(t, "x")
-	if statusMessage != "Nothing to clear" || len(edits) != 1 {
+	if statusMessage != "Nothing to cut" || len(edits) != 1 {
 		t.Errorf("x on an empty cell: %q, edits %d", statusMessage, len(edits))
+	}
+	// The two x presses copied their blocks (after the two d removals above).
+	if n := len(*ran); n != 4 || (*ran)[2] != "xclip:b1\tc1\nb2\tc2" || (*ran)[3] != "xclip:a2\tb2" {
+		t.Errorf("x must cut the block to the clipboard, got %q", *ran)
 	}
 }
 
-func TestCutCopiesBeforeRemoving(t *testing.T) {
-	setupEditTable(t)
-	ran := stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
-	press(t, "j X")
-	if got := joined(column(b, 0)); got != "h1 a1 a3 a4" {
-		t.Fatalf("X: %q", got)
-	}
-	if len(*ran) != 1 || (*ran)[0] != "xclip:a2\tb2\tc2\td2" || !strings.Contains(statusMessage, "Cut 1 row to xclip") {
-		t.Errorf("clipboard %v, status %q", *ran, statusMessage)
-	}
-	press(t, "V j X") // rows a3, a4 selected from row 2 -> wait, cursor is on a3 now
-	if got := (*ran)[len(*ran)-1]; got != "xclip:a3\tb3\tc3\td3\na4\tb4\tc4\td4" {
-		t.Errorf("visual X copied %q", got)
-	}
-	press(t, "u u l v X") // column h2, every row including the header
-	if got := (*ran)[len(*ran)-1]; got != "xclip:h2\nb1\nb2\nb3\nb4" {
-		t.Errorf("column X copied %q", got)
-	}
-	if got := joined(b.cont[0]); got != "h1 h3 h4" {
-		t.Errorf("column X removed: %q", got)
-	}
-
-	// Without a clipboard nothing is removed.
+func TestCutCellsWithoutClipboardStillCuts(t *testing.T) {
 	setupEditTable(t)
 	stubClipboard(t, map[string]bool{}, map[string]string{}, "linux", false)
-	press(t, "X")
-	if b.rowLen != 5 || dirty() || !strings.HasPrefix(statusMessage, "Not cut, clipboard failed") {
-		t.Errorf("a failed copy must leave the table alone: rows %d, %q", b.rowLen, statusMessage)
+	press(t, "x")
+	if b.cont[1][0] != "" || !dirty() || !strings.Contains(statusMessage, "Cut 1 cell; clipboard failed") {
+		t.Errorf("x without a clipboard must still cut into the register: %q, %q", b.cont[1][0], statusMessage)
+	}
+	press(t, "l p")
+	if b.cont[1][1] != "a1" {
+		t.Errorf("the cut value must be in the register for p, got %q", b.cont[1][1])
+	}
+}
+
+func TestRemovalsCopyToTheClipboard(t *testing.T) {
+	setupEditTable(t)
+	ran := stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
+	press(t, "j d d")
+	if got := joined(column(b, 0)); got != "h1 a1 a3 a4" {
+		t.Fatalf("dd: %q", got)
+	}
+	if len(*ran) != 1 || (*ran)[0] != "xclip:a2\tb2\tc2\td2" || !strings.Contains(statusMessage, "Removed 1 row; copied via xclip") {
+		t.Errorf("clipboard %v, status %q", *ran, statusMessage)
+	}
+	press(t, "V j d") // rows a3, a4; the cursor is on a3
+	if got := (*ran)[len(*ran)-1]; got != "xclip:a3\tb3\tc3\td3\na4\tb4\tc4\td4" {
+		t.Errorf("visual d copied %q", got)
+	}
+	press(t, "u u l v d") // column h2, every row including the header
+	if got := (*ran)[len(*ran)-1]; got != "xclip:h2\nb1\nb2\nb3\nb4" {
+		t.Errorf("column d copied %q", got)
+	}
+	if got := joined(b.cont[0]); got != "h1 h3 h4" {
+		t.Errorf("column d removed: %q", got)
+	}
+
+	// Without a clipboard the removal still happens; the footer says the copy failed.
+	setupEditTable(t)
+	stubClipboard(t, map[string]bool{}, map[string]string{}, "linux", false)
+	press(t, "d d")
+	if b.rowLen != 4 || !dirty() || !strings.Contains(statusMessage, "Removed 1 row; clipboard failed") {
+		t.Errorf("a failed copy must not stop the removal: rows %d, %q", b.rowLen, statusMessage)
+	}
+	press(t, "G p")
+	if got := strings.Join(b.cont[3], " "); got != "a1 b1 c1 d1" {
+		t.Errorf("the removed row must still be in the register: %q", got)
 	}
 }
 
 func TestEditsThroughFilteredView(t *testing.T) {
 	setupEditTable(t)
+	stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
 	originalBuffer = b
 	activeFilters[0] = FilterOptions{Query: "a2|a4", Operator: "regex"}
 	isFiltered = true
@@ -452,7 +477,7 @@ func TestYankAndPasteCells(t *testing.T) {
 
 	// X and d fill the register like vim; p puts the removed row elsewhere.
 	setupEditTable(t)
-	press(t, "X j p") // cut a1's row (cursor lands on a2), paste over a3
+	press(t, "d d j p") // remove a1's row (cursor lands on a2), paste over a3
 	if got := strings.Join(b.cont[2], " "); got != "a1 b1 c1 d1" || b.rowLen != 4 {
 		t.Errorf("paste after cut: %q rows %d", got, b.rowLen)
 	}
@@ -462,16 +487,16 @@ func TestYankAndPasteCells(t *testing.T) {
 		t.Errorf("paste after dd: %q", got)
 	}
 
-	// x does not touch the register, so the yank survives clearing.
+	// x cuts into the register like vim's x, so p puts the cut value down.
 	setupEditTable(t)
 	press(t, "y l x l p")
-	if b.cont[1][2] != "a1" || b.cont[1][1] != "" {
-		t.Errorf("x must not overwrite the register: %v", b.cont[1])
+	if b.cont[1][2] != "b1" || b.cont[1][1] != "" {
+		t.Errorf("x must fill the register with the cut cell: %v", b.cont[1])
 	}
 
 	// A column removal pastes its data cells downwards, without the header.
 	setupEditTable(t)
-	press(t, "l v X g g 0 l l p") // cut column h2 (visual block X), paste over what is now the third column (h4)
+	press(t, "l v d g g 0 l l p") // remove column h2 (visual block d), paste over what is now the third column (h4)
 	if b.cont[1][2] != "b1" || b.cont[4][2] != "b4" || b.cont[0][2] != "h4" {
 		t.Errorf("column cut then paste: %v", column(b, 2))
 	}

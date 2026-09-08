@@ -46,7 +46,6 @@ const (
 	actVisualRow    action = "visual_row"
 	actVisualSwap   action = "visual_swap"
 	actDelete       action = "delete"
-	actCut          action = "cut"
 	actClear        action = "clear"
 	actUndo         action = "undo"
 	actWrite        action = "write"
@@ -107,8 +106,7 @@ var actionCatalog = []struct {
 	{actionInfo{actVisualRow, "Visual", "Select whole rows", false}, []string{"V"}},
 	{actionInfo{actVisualSwap, "Visual", "Swap the anchor and the cursor of the selection", false}, []string{"o"}},
 	{actionInfo{actDelete, "Edit", "Remove: dd the row, d+motion the rows (dj, dG) or columns (dl, d$) it spans; in visual mode the selected rows (V) or columns (v)", false}, []string{"d"}},
-	{actionInfo{actCut, "Edit", "Remove and copy to the clipboard: the row, or the visual selection", false}, []string{"X"}},
-	{actionInfo{actClear, "Edit", "Clear the cell; with a count, N cells to the right; in visual mode the selected cells", false}, []string{"x"}},
+	{actionInfo{actClear, "Edit", "Cut the cell to the clipboard and empty it; with a count, N cells to the right; in visual mode the selected cells", false}, []string{"x"}},
 	{actionInfo{actEdit, "Edit", "Edit the cell in a vim line editor: Enter applies, Esc cancels", false}, []string{"E"}},
 	{actionInfo{actInsert, "Edit", "Edit the cell, inserting at the start; in visual mode the text is inserted in every selected cell (Esc applies)", false}, []string{"i", "ctrl+i"}},
 	{actionInfo{actAppend, "Edit", "Edit the cell, appending at the end; in visual mode the text is appended to every selected cell", false}, []string{"a"}},

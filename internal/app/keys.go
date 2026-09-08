@@ -168,15 +168,15 @@ func dispatch(act action) {
 		case actYankRow:
 			yankVisual(true)
 			return
-		case actDelete, actCut:
+		case actDelete:
 			// Structure: V removes the selected rows, v the selected columns.
 			r1, c1, r2, c2 := visualRect()
 			kind := visual
 			visual = visualOff
 			if kind == visualRows {
-				deleteRows(r1, r2, act == actCut)
+				deleteRows(r1, r2)
 			} else {
-				deleteColumns(c1, c2, act == actCut)
+				deleteColumns(c1, c2)
 			}
 			return
 		case actClear:
@@ -316,16 +316,16 @@ func finishOperator(act action, info actionInfo, rawCount, count int) {
 	}
 	switch {
 	case act == op:
-		deleteRows(row, row+count-1, false)
+		deleteRows(row, row+count-1)
 	case info.motion && act != actNextMatch && act != actPrevMatch:
 		rows, lo, hi, ok := operatorRange(act, rawCount, count, row, col)
 		switch {
 		case !ok:
 			drawFooterText(fileNameStr, statusMessage, cursorPosStr)
 		case rows:
-			deleteRows(lo, hi, false)
+			deleteRows(lo, hi)
 		default:
-			deleteColumns(lo, hi, false)
+			deleteColumns(lo, hi)
 		}
 	default:
 		drawFooterText(fileNameStr, statusMessage, cursorPosStr)
@@ -464,8 +464,6 @@ func runAction(act action, rawCount, count int) {
 		startVisual(visualRows)
 	case actVisualSwap:
 		swapVisualAnchor()
-	case actCut:
-		deleteRows(row, row+count-1, true)
 	case actClear:
 		clearCells(row, col, row, col+count-1)
 	case actPaste:

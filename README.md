@@ -51,7 +51,7 @@ controls.
   rows to the clipboard; every key is remappable in a config file
 - **Editing**: changes are staged like in fdisk and written with `W`; `dd`
   and `d` with a motion remove rows or columns, visual `d` removes the
-  selection, `x` clears cells, `X` cuts to the clipboard, `E` opens a vim
+  selection, `x` cuts cells, removals go to the clipboard, `E` opens a vim
   line editor on the cell, `u` undoes; every write keeps a backup of the
   previous version
 - **Mouse support**: click to select, scroll to move, click buttons in dialogs
@@ -238,10 +238,8 @@ from one edge to the other instead.
 - `d` + motion: remove the rows a vertical motion spans (`dj`, `d3j`, `dG`,
   `dgg`) or the columns a horizontal one spans (`dl`, `dh`, `d$`, `d0`)
 - `d` in visual mode: remove the selected rows (`V`) or columns (`v`)
-- `x`: clear the cell; with a count, N cells to the right; in visual mode
-  every selected cell
-- `X`: remove and copy to the clipboard: the current row, or the visual
-  selection
+- `x`: cut the cell to the clipboard and empty it; with a count, N cells to
+  the right; in visual mode every selected cell
 - `E`: edit the cell in a vim line editor (see [Editing](#editing-1))
 - `i`, `Ctrl-I`, `a`: edit the cell, inserting at the start or appending at
   the end; in visual mode the text goes into every selected cell
@@ -380,6 +378,8 @@ the unique filters last, so duplicates are removed from the rows that match.
 `y` copies the current cell and `Y` the current row to the system clipboard.
 Rows and blocks are tab-separated with one line per row, so they paste
 straight into a spreadsheet or a shell. Yanks over 50MB are refused.
+Removals copy too: `x`, `dd`, `d` with a motion and visual `d` send what they
+remove, as vim does with `clipboard=unnamedplus`.
 
 TTV detects the clipboard of the system it runs on and also sends the OSC 52
 terminal escape (tmux forwards it when `set -g set-clipboard on` is set;
@@ -442,12 +442,11 @@ and the bright one is the one Enter will press.
   `2dG` removes from row 2 to the cursor.
 - The last row and the last column cannot be removed.
 
-`X` cuts: it copies before it removes (the current row, or the visual
-selection; whole columns are copied with every row of the table) and leaves
-the table alone when no clipboard channel can take the text at all. The
-clipboard tool finishes in the background as it does for a yank; should it
-fail, the footer says so and the cut is still in the register for `p`, and
-`u` puts it back.
+Every removal copies what it removes to the clipboard and the register, as
+vim does with `clipboard=unnamedplus`: rows as tab-separated lines, columns
+with every row of the table, header included. The removal never waits for
+the clipboard; the tool finishes in the background as it does for a yank,
+and should it fail, the footer says so while `p` and `u` still have the data.
 
 #### Adding rows and columns
 
@@ -462,9 +461,11 @@ does with `timeoutlen`.
 
 #### Cells and the line editor
 
-`x` clears the cell under the cursor (`3x` three cells; in visual mode every
-selected cell). `E` opens the cell in a line editor that behaves like a vim
-line; `i` and `a` open it straight in insert mode, `cc` clears it first.
+`x` cuts the cell under the cursor (`3x` three cells; in visual mode every
+selected cell): the values go to the clipboard and the register as a
+tab-separated block, then the cells are emptied, so `p` puts them back
+elsewhere. `E` opens the cell in a line editor that behaves like a vim line;
+`i` and `a` open it straight in insert mode, `cc` clears it first.
 
 - Motions: `h l 0 ^ $ | w b e W B E f F t T ; ,`, with counts.
 - Operators: `d c y` with motions or text objects (`iw aw iW aW`, `i"`,
@@ -492,12 +493,11 @@ with `Ctrl-v`, press `Ctrl-I`, type, Esc: all five hold the text.
 
 #### Paste
 
-`y`, `Y`, a visual yank, `X` and `d` also fill an in-app register (the system
+`y`, `Y`, a visual yank, `x` and `d` also fill an in-app register (the system
 clipboard is never read). `p` or `P` replaces the cell under the cursor with
 it; a yanked block is laid out from the cursor and clipped to the table; in
 visual mode a single value fills every selected cell. Text yanked inside the
-cell editor pastes into a cell the same way. `x` does not touch the register,
-so a yanked value survives clearing cells.
+cell editor pastes into a cell the same way.
 
 #### Filters and sorting
 
@@ -530,8 +530,8 @@ write.
 
 #### Deviations from vim
 
-In the table, `x` clears content instead of being `dl` (as in sc-im, the vim
-spreadsheet), `X` cuts to the clipboard, `W` writes and `I` shows statistics.
+In the table, `x` cuts the cell's content instead of being `dl` (as in sc-im,
+the vim spreadsheet), `W` writes and `I` shows statistics.
 The line editor's keys are vim's and are not remappable; the table keys are.
 
 ### Hiding columns
@@ -625,7 +625,7 @@ Actions, by section of the help dialog:
   `filter`, `remove_filter`
 - Sort and types: `sort_asc`, `sort_desc`, `toggle_type`
 - Yank and visual: `yank`, `yank_row`, `visual`, `visual_row`, `visual_swap`
-- Edit: `delete`, `cut`, `clear`, `edit`, `insert`, `append`, `change`,
+- Edit: `delete`, `clear`, `edit`, `insert`, `append`, `change`,
   `paste`, `insert_row`, `open_row`, `insert_column`, `open_column`, `undo`,
   `write`
 - View: `toggle_width`, `fold_column`, `unfold_column`, `toggle_fold`,

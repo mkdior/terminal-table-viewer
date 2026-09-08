@@ -260,8 +260,8 @@ func orderRange(a, b, min, max int) (lo, hi int) {
 }
 
 // deleteRows removes data rows r1..r2 of the view, and the same rows from the
-// unfiltered table, as one edit. With toClipboard the rows are copied first (X).
-func deleteRows(r1, r2 int, toClipboard bool) {
+// unfiltered table, as one edit; the rows go to the register and the clipboard.
+func deleteRows(r1, r2 int) {
 	if !editsAllowed() {
 		return
 	}
@@ -273,14 +273,7 @@ func deleteRows(r1, r2 int, toClipboard bool) {
 	}
 	_, col := bufferTable.GetSelection()
 	block := b.cellBlock(r1, 0, r2, b.colLen-1)
-	did := "Removed " + plural(n, "row")
-	if toClipboard {
-		// The rows leave the table only when a clipboard channel can take them.
-		var ok bool
-		if did, ok = cutToClipboard(tsv(block), "Cut "+plural(n, "row")); !ok {
-			return
-		}
-	}
+	did := copyRemoved(tsv(block), "Removed "+plural(n, "row"))
 	setRegister(block)
 	removed := baseBuffer().removeRows(b.cont[r1 : r2+1])
 	edits = append(edits, edit{rows: removed})
@@ -289,8 +282,9 @@ func deleteRows(r1, r2 int, toClipboard bool) {
 
 // deleteColumns removes columns c1..c2 from the whole table as one edit,
 // dropping the filters and width limits that were on them (undo restores
-// them). With toClipboard the visible cells of the columns are copied first.
-func deleteColumns(c1, c2 int, toClipboard bool) {
+// them). The columns go to the clipboard with their header, and their data
+// cells to the register.
+func deleteColumns(c1, c2 int) {
 	if !editsAllowed() {
 		return
 	}
@@ -306,16 +300,9 @@ func deleteColumns(c1, c2 int, toClipboard bool) {
 	for c := c1; c <= c2; c++ {
 		names = append(names, columnTitle(c))
 	}
-	did := "Removed " + plural(k, "column") + " (" + strings.Join(names, ", ") + ")"
-	if toClipboard {
-		// Whole columns are removed, so whole columns are copied: every row of
-		// the unfiltered table, header included.
-		var ok bool
-		text := tsv(base.cellBlock(0, c1, base.rowLen-1, c2))
-		if did, ok = cutToClipboard(text, "Cut "+plural(k, "column")+" ("+strings.Join(names, ", ")+")"); !ok {
-			return
-		}
-	}
+	// Whole columns are removed, so whole columns are copied: every row of the
+	// unfiltered table, header included.
+	did := copyRemoved(tsv(base.cellBlock(0, c1, base.rowLen-1, c2)), "Removed "+plural(k, "column")+" ("+strings.Join(names, ", ")+")")
 	setRegister(base.cellBlock(base.rowFreeze, c1, base.rowLen-1, c2)) // the data cells, for p
 	e := edit{colAt: c1, cols: base.removeColumns(c1, c2), names: names}
 	e.filters = dropColumnKeys(activeFilters, c1, c2)
@@ -350,9 +337,16 @@ func rectTargets(r1, c1, r2, c2 int, f func(string) string) []cellTarget {
 
 // setCells stores values in many cells as one edit and re-derives a filtered
 // view; cells that already hold their value are skipped. did names the
-// operation for the footer ("Cleared", "Pasted"). It returns how many cells
-// changed; on zero nothing is recorded and the footer is left to the caller.
+// operation for the footer ("Pasted", "Changed") and is followed by the cell
+// count. It returns how many cells changed; on zero nothing is recorded and
+// the footer is left to the caller.
 func setCells(targets []cellTarget, did string) int {
+	return setCellsStatus(targets, func(n int) string { return did + " " + plural(n, "cell") })
+}
+
+// setCellsStatus is setCells with the footer text built from the number of
+// cells that changed.
+func setCellsStatus(targets []cellTarget, status func(n int) string) int {
 	if !editsAllowed() {
 		return 0
 	}
@@ -373,20 +367,38 @@ func setCells(targets []cellTarget, did string) int {
 	}
 	edits = append(edits, edit{cells: changes})
 	row, col := bufferTable.GetSelection()
-	editStatus(did + " " + plural(len(changes), "cell") + refreshView(row, col))
+	editStatus(status(len(changes)) + refreshView(row, col))
 	return len(changes)
 }
 
-// clearCells empties the cells in rows r1..r2, columns c1..c2 of the view as
-// one edit. Cells that are already empty are left alone. Like every edit it
-// re-derives a filtered view, so a row that stops matching disappears.
+// clearCells cuts the cells in rows r1..r2, columns c1..c2 of the view: the
+// block goes to the register and the clipboard, as vim's x deletes into the
+// register, and the cells are emptied as one edit. Cells that are already
+// empty are left alone, and with nothing to cut the table is left as it is.
+// Like every edit it re-derives a filtered view, so a row that stops matching
+// disappears.
 func clearCells(r1, c1, r2, c2 int) {
 	if !editsAllowed() {
 		return
 	}
-	if setCells(rectTargets(r1, c1, r2, c2, func(string) string { return "" }), "Cleared") == 0 {
-		drawFooterText(fileNameStr, "Nothing to clear", cursorPosStr)
+	r1, r2 = orderRange(r1, r2, firstDataRow(b), b.rowLen-1)
+	c1, c2 = orderRange(c1, c2, 0, b.colLen-1)
+	block := b.cellBlock(r1, c1, r2, c2)
+	n := 0
+	for _, row := range block {
+		for _, v := range row {
+			if v != "" {
+				n++
+			}
+		}
 	}
+	if n == 0 {
+		drawFooterText(fileNameStr, "Nothing to cut", cursorPosStr)
+		return
+	}
+	did := copyRemoved(tsv(block), "Cut "+plural(n, "cell"))
+	setRegister(block)
+	setCellsStatus(rectTargets(r1, c1, r2, c2, func(string) string { return "" }), func(int) string { return did })
 }
 
 // changeCell records the previous value of one cell and stores the new one as
@@ -549,34 +561,33 @@ func rowIndex(buf *Buffer, row []string) int {
 	return -1
 }
 
-// cutToClipboard copies the text of a cut. When no clipboard channel can take
-// it at all the footer says so and ok is false, so the caller leaves the table
-// unchanged. Otherwise did is the status to show now: what took the text, or
-// the tool still running, in which case the footer is redrawn with the outcome
-// when it is done (the register holds the cut either way, so p and u still
-// have it).
-func cutToClipboard(text, what string) (did string, ok bool) {
+// copyRemoved sends the text of a removal to the clipboard, as vim does with
+// clipboard=unnamedplus, and returns the footer text for now: what with the
+// channel that took the text, or with the tool still running, in which case
+// the footer is redrawn with the outcome when it is done. The removal itself
+// never waits for the clipboard: a copy that fails is only reported, and the
+// register holds the text for p in any case.
+func copyRemoved(text, what string) (did string) {
 	var later bool // the report comes after this call returned
+	did = what
 	pending, err := copyToClipboard(text, func(channels string, err error) {
-		switch {
-		case err != nil:
+		if err != nil {
 			did = what + "; clipboard failed: " + err.Error()
-		default:
-			did = what + " to " + channels
+		} else {
+			did = what + "; copied via " + channels
 		}
 		if later {
 			editStatus(did)
 		}
 	})
-	if err != nil {
-		drawFooterText(fileNameStr, "Not cut, clipboard failed: "+err.Error(), cursorPosStr)
-		return "", false
-	}
-	if pending != "" {
+	switch {
+	case err != nil:
+		return what + "; clipboard failed: " + err.Error()
+	case pending != "":
 		later = true
-		return what + "; " + pending + " running", true
+		return what + "; " + pending + " running"
 	}
-	return did, true
+	return did
 }
 
 // sortTable sorts the unfiltered table by column using its detected type and
