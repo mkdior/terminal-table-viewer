@@ -27,6 +27,14 @@ type Config struct {
 	Theme     map[string]string  `toml:"theme"`
 	Clipboard ClipboardConfig    `toml:"clipboard"`
 	Preview   PreviewConfig      `toml:"preview"`
+	Backup    BackupConfig       `toml:"backup"`
+}
+
+// BackupConfig controls where the previous version of a written file is kept.
+type BackupConfig struct {
+	Enabled *bool  `toml:"enabled"` // keep a backup on every write (default true)
+	Dir     string `toml:"dir"`     // directory; empty means $XDG_STATE_HOME/ttv/backup
+	Keep    *int   `toml:"keep"`    // backups kept per file (default 20, 0 = all)
 }
 
 // PreviewConfig controls the full-value box shown for cut cells.
@@ -155,6 +163,22 @@ func applyConfig(cfg Config, themeFlag string) error {
 		return fmt.Errorf("config: preview: %w", err)
 	}
 	previewPos = pos
+	backupEnabled = cfg.Backup.Enabled == nil || *cfg.Backup.Enabled
+	backupDirOverride = ""
+	if dir := strings.TrimSpace(cfg.Backup.Dir); dir != "" {
+		abs, err := expandPath(dir)
+		if err != nil {
+			return fmt.Errorf("config: backup dir: %w", err)
+		}
+		backupDirOverride = abs
+	}
+	backupKeep = defaultBackupKeep
+	if cfg.Backup.Keep != nil {
+		if *cfg.Backup.Keep < 0 {
+			return fmt.Errorf("config: backup keep must be 0 or more, got %d", *cfg.Backup.Keep)
+		}
+		backupKeep = *cfg.Backup.Keep
+	}
 	return nil
 }
 
@@ -234,6 +258,14 @@ func dumpConfig(w io.Writer) error {
 	sb.WriteString("# over the selected cell.\n\n")
 	sb.WriteString("[preview]\n")
 	sb.WriteString("position = \"bottom\"\n")
+	sb.WriteString("\n# Backup: before W replaces a file, a private copy of the previous version is\n")
+	sb.WriteString("# made in dir as <name>.<path hash>.<timestamp>. Empty dir means\n")
+	sb.WriteString("# $XDG_STATE_HOME/ttv/backup (~/.local/state/ttv/backup); ~ is expanded.\n")
+	sb.WriteString("# keep is how many backups of one file are kept; 0 keeps them all.\n\n")
+	sb.WriteString("[backup]\n")
+	sb.WriteString("enabled = true\n")
+	sb.WriteString("dir     = \"\"\n")
+	fmt.Fprintf(&sb, "keep    = %d\n", defaultBackupKeep)
 	_, err := io.WriteString(w, sb.String())
 	return err
 }

@@ -97,7 +97,7 @@ var actionCatalog = []struct {
 	{actionInfo{actCut, "Edit", "Remove and copy to the clipboard: the row, or the visual selection", false}, []string{"X"}},
 	{actionInfo{actClear, "Edit", "Clear the cell; with a count, N cells to the right; in visual mode the selected cells", false}, []string{"x"}},
 	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
-	{actionInfo{actWrite, "Edit", "Write the table back to the file", false}, []string{"W"}},
+	{actionInfo{actWrite, "Edit", "Write the table back to the file (the original is kept in the backup directory)", false}, []string{"W"}},
 	{actionInfo{actToggleWidth, "View", "Toggle the 50 character width limit on the current column", false}, []string{"_"}},
 	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"i"}},
 	{actionInfo{actHelp, "View", "Show this help", false}, []string{"?"}},

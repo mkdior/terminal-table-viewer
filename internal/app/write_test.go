@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rivo/tview"
 )
 
 // setupWriteTable prepares an editable table backed by a real file in a temp
-// directory. It returns the file path.
+// directory, with backups going to a temp directory as well. It returns the
+// file path.
 func setupWriteTable(t *testing.T, content string) string {
 	t.Helper()
 	setupEditTable(t)
@@ -23,13 +25,13 @@ func setupWriteTable(t *testing.T, content string) string {
 	if err := os.WriteFile(path, []byte(content), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	oldStat, oldStopped := sourceStat, loadStopped
+	oldEnabled, oldDir, oldKeep, oldStat, oldStopped := backupEnabled, backupDirOverride, backupKeep, sourceStat, loadStopped
 	oldArgs, oldUI, oldApp := args, UI, app
 	t.Cleanup(func() {
-		sourceStat, loadStopped = oldStat, oldStopped
+		backupEnabled, backupDirOverride, backupKeep, sourceStat, loadStopped = oldEnabled, oldDir, oldKeep, oldStat, oldStopped
 		args, UI, app = oldArgs, oldUI, oldApp
 	})
-	loadStopped = false
+	backupEnabled, backupDirOverride, backupKeep, loadStopped = true, filepath.Join(dir, "backups"), defaultBackupKeep, false
 	args.setDefault()
 	args.FileName = path
 	buf := createNewBuffer()
@@ -133,6 +135,59 @@ func TestWriteRoundTripsThroughTheLoader(t *testing.T) {
 	}
 }
 
+func TestWriteKeepsABackupCopy(t *testing.T) {
+	path := setupWriteTable(t, "a,b\n1,2\n3,4\n")
+	press(t, "d d W")
+	entries, err := os.ReadDir(backupDirOverride)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("backups: %v %v", entries, err)
+	}
+	name := entries[0].Name()
+	if !strings.HasPrefix(name, "data.csv.") || !strings.Contains(name, "."+time.Now().Format("20060102")) {
+		t.Errorf("backup name = %q", name)
+	}
+	backup := filepath.Join(backupDirOverride, name)
+	if got := readFile(t, backup); got != "a,b\n1,2\n3,4\n" {
+		t.Errorf("backup content = %q", got)
+	}
+	if info, _ := os.Stat(backup); info.Mode().Perm() != 0o600 {
+		t.Errorf("backup mode = %v, want 0600", info.Mode().Perm())
+	}
+	if info, _ := os.Stat(backupDirOverride); info.Mode().Perm() != 0o700 {
+		t.Errorf("backup dir mode = %v, want 0700", info.Mode().Perm())
+	}
+	if !strings.Contains(statusMessage, "previous version in ") || !strings.Contains(statusMessage, name) {
+		t.Errorf("status must name the backup: %q", statusMessage)
+	}
+
+	// Two writes in the same second get distinct names; pruning keeps the newest.
+	backupKeep = 2
+	press(t, "l d l W")
+	press(t, "u") // nothing pending? undo stack was cleared by the write
+	if statusMessage != "Already at oldest change" {
+		t.Errorf("the undo history is cleared by a write, got %q", statusMessage)
+	}
+	edits = append(edits, edit{cells: []cellChange{{b.cont[1], 0, "1"}}}) // fake a pending edit
+	press(t, "W")
+	entries, _ = os.ReadDir(backupDirOverride)
+	if len(entries) != 2 {
+		names := []string{}
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("keep=2 must leave two backups, got %v", names)
+	}
+
+	// Disabled: no backup, and the write still happens.
+	backupEnabled = false
+	edits = append(edits, edit{cells: []cellChange{{b.cont[1], 0, "1"}}})
+	press(t, "W")
+	if entries, _ = os.ReadDir(backupDirOverride); len(entries) != 2 || strings.Contains(statusMessage, "previous version") {
+		t.Errorf("no backup expected when disabled: %d entries, %q", len(entries), statusMessage)
+	}
+	_ = path
+}
+
 func TestWriteRefusals(t *testing.T) {
 	path := setupWriteTable(t, "a,b\n1,2\n3,4\n")
 	press(t, "W")
@@ -181,6 +236,9 @@ func TestWriteRefusals(t *testing.T) {
 	if readFile(t, path) != "a,b\n9,9\n8,8\n7,7\n" {
 		t.Error("the changed file must be left alone")
 	}
+	if entries, _ := os.ReadDir(backupDirOverride); len(entries) != 0 {
+		t.Error("no backup may be made for a refused write")
+	}
 
 	// Read-only files are refused too.
 	path = setupWriteTable(t, "a,b\n1,2\n3,4\n")
@@ -208,8 +266,11 @@ func TestWriteGzipAndSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skip("symlinks not supported:", err)
 	}
-	oldStat, oldName := sourceStat, args.FileName
-	t.Cleanup(func() { sourceStat, args.FileName = oldStat, oldName })
+	oldEnabled, oldDir, oldStat, oldName := backupEnabled, backupDirOverride, sourceStat, args.FileName
+	t.Cleanup(func() {
+		backupEnabled, backupDirOverride, sourceStat, args.FileName = oldEnabled, oldDir, oldStat, oldName
+	})
+	backupEnabled, backupDirOverride = true, filepath.Join(dir, "backups")
 	args.FileName = link
 	buf := createNewBuffer()
 	if err := loadFileToBuffer(link, buf); err != nil {
@@ -240,6 +301,10 @@ func TestWriteGzipAndSymlink(t *testing.T) {
 	if string(data) != "a,b\n3,4\n" {
 		t.Errorf("content %q", data)
 	}
+	entries, _ := os.ReadDir(backupDirOverride)
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "real.dat.") {
+		t.Errorf("the backup is named after the real file: %v", entries)
+	}
 }
 
 func TestQuitPromptsWhenDirty(t *testing.T) {
@@ -262,5 +327,30 @@ func TestQuitPromptsWhenDirty(t *testing.T) {
 	requestQuit()
 	if !UI.HasPage("quitDialog") {
 		t.Error("blocked write still prompts before discarding")
+	}
+}
+
+func TestBackupNameAndPaths(t *testing.T) {
+	a, b2 := backupName("/x/data.csv"), backupName("/y/data.csv")
+	if !strings.HasPrefix(a, "data.csv.") || a == b2 || len(a) != len("data.csv.")+8 {
+		t.Errorf("backupName: %q %q", a, b2)
+	}
+	home, _ := os.UserHomeDir()
+	if got := tildePath(filepath.Join(home, "x", "y")); got != filepath.Join("~", "x", "y") {
+		t.Errorf("tildePath = %q", got)
+	}
+	if got := tildePath("/elsewhere/z"); got != "/elsewhere/z" {
+		t.Errorf("tildePath outside home = %q", got)
+	}
+	if got, err := expandPath("~/b"); err != nil || got != filepath.Join(home, "b") {
+		t.Errorf("expandPath(~/b) = %q %v", got, err)
+	}
+	if got, err := expandPath("rel"); err != nil || !filepath.IsAbs(got) {
+		t.Errorf("expandPath(rel) = %q %v", got, err)
+	}
+	t.Setenv("XDG_STATE_HOME", "/tmp/state")
+	backupDirOverride = ""
+	if dir, _ := backupDir(); dir != filepath.Join("/tmp/state", "ttv", "backup") {
+		t.Errorf("backupDir = %q", dir)
 	}
 }
