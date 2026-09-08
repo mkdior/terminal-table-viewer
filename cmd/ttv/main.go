@@ -5,7 +5,7 @@ import "github.com/mkdior/terminal-table-viewer/internal/app"
 
 // version is the release version; overridden at build time with
 // -ldflags "-X main.version=...".
-var version = "0.23.3"
+var version = "0.23.4"
 
 func main() {
 	app.Execute(version)
