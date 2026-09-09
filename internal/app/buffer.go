@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -83,6 +84,8 @@ type Buffer struct {
 	memoryUsage  int64             // Current estimated memory usage in bytes
 	maxMemory    int64             // Maximum allowed memory in bytes (0 = no limit)
 	padded       bool              // Some row was shorter than the table and padded with NaN
+	progress     LoadProgress      // The load filling this buffer; each buffer loads on its own
+	source       os.FileInfo       // The file as it was when loaded or last written; nil for a pipe
 }
 
 const (
@@ -115,7 +118,8 @@ func createNewBuffer() *Buffer {
 	}
 }
 
-// createNewBufferWithData creates a Buffer from existing data
+// createNewBufferWithData creates a Buffer from existing data. Nothing more is
+// coming, so the buffer counts as fully loaded and may be edited.
 func createNewBufferWithData(ss [][]string, strict bool) (*Buffer, error) {
 	buf := createNewBuffer()
 	for _, s := range ss {
@@ -123,6 +127,7 @@ func createNewBufferWithData(ss [][]string, strict bool) (*Buffer, error) {
 			return nil, err
 		}
 	}
+	buf.progress.IsComplete.Store(true)
 	return buf, nil
 }
 
@@ -1136,6 +1141,22 @@ func (b *Buffer) restoreOrder(order [][]string) {
 		return
 	}
 	copy(b.cont, order)
+}
+
+// setSource records the file the buffer holds as it was when it was loaded or
+// written. The loader sets it before publishing IsComplete, and the write
+// path, which reads it after, refuses a file that has changed since.
+func (b *Buffer) setSource(info os.FileInfo) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.source = info
+}
+
+// sourceInfo returns the file the buffer was loaded from, nil for a pipe.
+func (b *Buffer) sourceInfo() os.FileInfo {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.source
 }
 
 // wasPadded reports whether any row was padded with NaN to the table width.

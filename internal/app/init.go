@@ -37,7 +37,6 @@ var mainView *cellPreview        // Main page plus the floating full-value previ
 var bufferTable *tview.Table     // Reference to buffer table
 var fileNameStr string           // Store filename for footer
 var cursorPosStr string          // Store cursor position for footer
-var loadProgress LoadProgress    // Track loading progress
 var userMovedCursor bool         // Track if user has moved the cursor
 var wrappedColumns map[int]int   // Track which columns are wrapped and their max width
 var searchResults []SearchResult // Store search results
@@ -54,8 +53,10 @@ var lastGPress time.Time                // Time of the last 'g' press, for the g
 var pendingCount int                    // Digits typed so far for a vim-style count prefix (0 = none)
 var keys = defaultKeymap()              // Active key bindings
 
-// LoadProgress tracks loading progress. It is written by the loader goroutine
-// and read by the UI ticker, so the fields are atomic.
+// LoadProgress tracks the load that fills a Buffer. It is written by the
+// loader goroutine and read by the UI ticker, so the fields are atomic.
+// IsComplete is published once post-processing is over as well; it gates
+// editing and the write path.
 type LoadProgress struct {
 	TotalBytes  atomic.Int64
 	LoadedBytes atomic.Int64
@@ -109,7 +110,7 @@ func initView() {
 	pendingOp, pendingOpRaw, pendingOpCount = "", 0, 0
 	visual = visualOff
 	edits = nil
-	sourceStat, loadStopped = nil, false
+	loadStopped = false
 	cellEdit, lineRegister, lineLastChange, tableRegister = nil, nil, nil, nil
 }
 

@@ -97,6 +97,7 @@ type loadSource struct {
 	scanner   *bufio.Scanner // line scanner over the (possibly decompressed) input
 	closer    io.Closer      // underlying file to release once loading ends, nil for pipes
 	totalSize int64          // input size in bytes, 0 when unknown
+	stat      os.FileInfo    // the file as opened, nil for pipes; the write path refuses a file that changed since
 }
 
 // updateInterval is the number of appended rows between two UI update signals.
@@ -146,7 +147,8 @@ func loadToBuffer(src loadSource, b *Buffer, updateChan chan<- bool, showProgres
 	if src.closer != nil {
 		defer func() { _ = src.closer.Close() }()
 	}
-	loadProgress.Reset(src.totalSize)
+	b.progress.Reset(src.totalSize)
+	b.setSource(src.stat)
 
 	progress := newProgressTracker(src.totalSize, showProgress)
 	defer progress.finish()
@@ -223,7 +225,7 @@ func loadToBuffer(src loadSource, b *Buffer, updateChan chan<- bool, showProgres
 		totalAddedLN++
 		batch++
 		bytesRead := int64(len(line) + 1) // +1 for newline
-		loadProgress.LoadedBytes.Add(bytesRead)
+		b.progress.LoadedBytes.Add(bytesRead)
 		progress.increment(bytesRead)
 		return false, nil
 	}
@@ -291,12 +293,12 @@ func loadToBuffer(src loadSource, b *Buffer, updateChan chan<- bool, showProgres
 		go func() {
 			b.detectAllColumnTypes()
 			b.enableStringInterning()
-			loadProgress.IsComplete.Store(true)
+			b.progress.IsComplete.Store(true)
 		}()
 	} else {
 		b.detectAllColumnTypes()
 		b.enableStringInterning()
-		loadProgress.IsComplete.Store(true)
+		b.progress.IsComplete.Store(true)
 	}
 	return loadErr
 }
@@ -313,13 +315,12 @@ func openFileSource(fn string) (loadSource, error) {
 	if !fileInfo.IsDir() && !strings.HasSuffix(fn, ".gz") {
 		fileSize = fileInfo.Size()
 	}
-	sourceStat = fileInfo // the write path refuses if the file changes meanwhile
 	scanner, closer, err := getFileScanner(fn)
 	if err != nil {
 		return loadSource{}, err
 	}
 	scanner.Split(bufio.ScanLines)
-	return loadSource{name: fn, scanner: scanner, closer: closer, totalSize: fileSize}, nil
+	return loadSource{name: fn, scanner: scanner, closer: closer, totalSize: fileSize, stat: fileInfo}, nil
 }
 
 // maxScanTokenSize is the longest single line the loaders accept (bufio default is 64KB).

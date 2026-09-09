@@ -120,12 +120,12 @@ func TestCellEditorThroughKeys(t *testing.T) {
 func TestCellEditorWaitsForLoadAndKeepsVisualOut(t *testing.T) {
 	setupEditTable(t)
 	t.Cleanup(func() { cellEdit = nil })
-	loadProgress.IsComplete.Store(false)
+	b.progress.IsComplete.Store(false)
 	press(t, "E")
 	if cellEdit != nil || statusMessage != "Still loading; wait before editing" {
 		t.Errorf("editing must wait for the load: %v %q", cellEdit, statusMessage)
 	}
-	loadProgress.IsComplete.Store(true)
+	b.progress.IsComplete.Store(true)
 	press(t, "V j i")   // in visual mode i is a bulk insert on the first selected cell
 	flushPendingChord() // i also starts "i r" and "i c", so it waits for the chord timeout
 	if visual != visualOff || cellEdit == nil || cellEdit.bulk == nil || cellEdit.row != 1 || cellEdit.ed.mode != editInsert {

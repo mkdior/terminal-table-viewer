@@ -113,7 +113,7 @@ func baseBuffer() *Buffer {
 // loading reports whether rows are still being appended or post-processed by
 // the loader. Edits wait for it: a removed column would be re-added by
 // resizeColUnsafe, and type detection indexes columns by position.
-func loading() bool { return !loadProgress.IsComplete.Load() }
+func loading() bool { return !baseBuffer().progress.IsComplete.Load() }
 
 // editsAllowed reports whether the table may be changed now and says why not
 // in the footer otherwise.

@@ -26,10 +26,10 @@ func setupWriteTable(t *testing.T, content string) string {
 	if err := os.WriteFile(path, []byte(content), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	oldEnabled, oldDir, oldKeep, oldStat, oldStopped := backupEnabled, backupDirOverride, backupKeep, sourceStat, loadStopped
+	oldEnabled, oldDir, oldKeep, oldStopped := backupEnabled, backupDirOverride, backupKeep, loadStopped
 	oldArgs, oldUI, oldApp := args, UI, app
 	t.Cleanup(func() {
-		backupEnabled, backupDirOverride, backupKeep, sourceStat, loadStopped = oldEnabled, oldDir, oldKeep, oldStat, oldStopped
+		backupEnabled, backupDirOverride, backupKeep, loadStopped = oldEnabled, oldDir, oldKeep, oldStopped
 		args, UI, app = oldArgs, oldUI, oldApp
 	})
 	backupEnabled, backupDirOverride, backupKeep, loadStopped = true, filepath.Join(dir, "backups"), defaultBackupKeep, false
@@ -203,7 +203,7 @@ func TestWriteRefusals(t *testing.T) {
 		want  string
 	}{
 		{"pipe", func() { args.FileName = pipeSourceName }, "the input came from a pipe"},
-		{"loading", func() { loadProgress.IsComplete.Store(false) }, "still loading"},
+		{"loading", func() { b.progress.IsComplete.Store(false) }, "still loading"},
 		{"stopped", func() { loadStopped = true }, "the load stopped early"},
 		{"lines", func() { args.NLine = 1 }, "--lines"},
 		{"skip-lines", func() { args.SkipNum = 1 }, "--skip-lines"},
@@ -219,7 +219,7 @@ func TestWriteRefusals(t *testing.T) {
 			t.Errorf("%s: status %q", tc.name, statusMessage)
 		}
 		args, args.FileName, loadStopped = saved, savedName, savedStopped
-		loadProgress.IsComplete.Store(true)
+		b.progress.IsComplete.Store(true)
 		b.padded = false
 	}
 	if readFile(t, path) != original {
@@ -267,9 +267,9 @@ func TestWriteGzipAndSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skip("symlinks not supported:", err)
 	}
-	oldEnabled, oldDir, oldStat, oldName := backupEnabled, backupDirOverride, sourceStat, args.FileName
+	oldEnabled, oldDir, oldName := backupEnabled, backupDirOverride, args.FileName
 	t.Cleanup(func() {
-		backupEnabled, backupDirOverride, sourceStat, args.FileName = oldEnabled, oldDir, oldStat, oldName
+		backupEnabled, backupDirOverride, args.FileName = oldEnabled, oldDir, oldName
 	})
 	backupEnabled, backupDirOverride = true, filepath.Join(dir, "backups")
 	args.FileName = link

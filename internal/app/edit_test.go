@@ -11,12 +11,11 @@ func setupEditTable(t *testing.T) {
 	t.Helper()
 	setupVisualTable(t)
 	oldOrig, oldFiltered, oldFilters, oldWrapped := originalBuffer, isFiltered, activeFilters, wrappedColumns
-	oldEdits, oldName, oldComplete := edits, args.FileName, loadProgress.IsComplete.Load()
+	oldEdits, oldName := edits, args.FileName
 	oldQuery, oldResults := searchQuery, searchResults
 	t.Cleanup(func() {
 		originalBuffer, isFiltered, activeFilters, wrappedColumns = oldOrig, oldFiltered, oldFilters, oldWrapped
 		edits, args.FileName = oldEdits, oldName
-		loadProgress.IsComplete.Store(oldComplete)
 		pendingOp, pendingOpCount = "", 0
 		searchQuery = oldQuery
 		setSearchResults(oldResults)
@@ -25,7 +24,7 @@ func setupEditTable(t *testing.T) {
 	activeFilters, wrappedColumns = map[int]FilterOptions{}, map[int]int{}
 	edits = nil
 	args.FileName = "table.csv"
-	loadProgress.IsComplete.Store(true)
+	b.progress.IsComplete.Store(true)
 	// Removals copy to the clipboard; give them a tool so the footer is stable.
 	stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
 }
@@ -428,7 +427,7 @@ func TestSortIsAnUndoableEdit(t *testing.T) {
 
 func TestEditsWaitForTheLoad(t *testing.T) {
 	setupEditTable(t)
-	loadProgress.IsComplete.Store(false)
+	b.progress.IsComplete.Store(false)
 	for _, k := range []string{"d d", "x", "X", "s", "l d l"} {
 		press(t, k)
 		if dirty() || b.rowLen != 5 || b.colLen != 4 || statusMessage != "Still loading; wait before editing" {

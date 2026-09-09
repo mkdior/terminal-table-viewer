@@ -22,13 +22,10 @@ import (
 // pipeSourceName is the file name shown when the table came from stdin.
 const pipeSourceName = "From Shell Pipe"
 
-// Load provenance the write path checks: the file as it was when it was
-// opened, and whether the load ended early. sourceStat is written by the
-// loader goroutine before IsComplete is published, and read after.
-var (
-	sourceStat  os.FileInfo
-	loadStopped bool
-)
+// loadStopped records that the load of the current table ended early; the
+// write path refuses an incomplete table. The file as it was when loaded
+// lives in the buffer itself (Buffer.source).
+var loadStopped bool
 
 // Backup settings from the [backup] section of the config file.
 var (
@@ -140,7 +137,7 @@ func writeFile(name string, buf *Buffer) (backup string, err error) {
 	if err != nil {
 		return "", err
 	}
-	if err := writable(name, real, info); err != nil {
+	if err := writable(name, real, info, buf.sourceInfo()); err != nil {
 		return "", err
 	}
 
@@ -190,7 +187,8 @@ func writeFile(name string, buf *Buffer) (backup string, err error) {
 	}
 	committed = true
 	syncDir(dir)
-	sourceStat, _ = os.Stat(real)
+	written, _ := os.Stat(real)
+	buf.setSource(written)
 	if prune != nil {
 		prune()
 	}
@@ -198,13 +196,14 @@ func writeFile(name string, buf *Buffer) (backup string, err error) {
 }
 
 // writable reports why the file cannot be replaced: it changed since it was
-// loaded, it is not a regular file, it is read-only, or other names are hard
-// linked to it (replacing it would leave them with the old content).
-func writable(name, real string, info os.FileInfo) error {
+// loaded (source is the file as loaded, nil when unknown), it is not a
+// regular file, it is read-only, or other names are hard linked to it
+// (replacing it would leave them with the old content).
+func writable(name, real string, info, source os.FileInfo) error {
 	switch {
 	case !info.Mode().IsRegular():
 		return fmt.Errorf("%s is not a regular file", name)
-	case sourceStat != nil && !sameSource(sourceStat, info):
+	case source != nil && !sameSource(source, info):
 		return errors.New("the file changed on disk since it was loaded; reload before writing")
 	case info.Mode().Perm()&0o200 == 0:
 		return fmt.Errorf("%s is read-only", name)
