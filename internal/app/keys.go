@@ -433,9 +433,18 @@ func runAction(act action, rawCount, count int) {
 		// motion keeps the horizontal scroll exactly where it was.
 		_, colOffset := bufferTable.GetOffset()
 		bufferTable.Select(r, c)
-		if c == col {
-			rowOffset, _ := bufferTable.GetOffset()
+		rowOffset, _ := bufferTable.GetOffset()
+		switch {
+		case c == col:
 			bufferTable.SetOffset(rowOffset, colOffset)
+		case c < b.colFreeze:
+			// A frozen column is drawn at any scroll, so neither tview nor
+			// pinColumnOffset moves the view when the cursor lands on one: 0 from
+			// the right edge only moved the cursor, and the next l snapped the
+			// columns to the start. A motion that reaches the frozen columns shows
+			// the beginning of the row, as in vim. c == col comes first so a
+			// vertical motion with the cursor parked there keeps its scroll.
+			bufferTable.SetOffset(rowOffset, 0)
 		}
 		return
 	}

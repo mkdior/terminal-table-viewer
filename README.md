@@ -219,8 +219,9 @@ shows the bindings that are active.
 - `b`: previous column
 - `gg`: first row
 - `G`: last row
-- `0`, `^`: first column (a stray `0` while typing a count jumps here;
-  unbind `0` from `first_column` in the config if that bites)
+- `0`, `^`: first column, scrolling the view back to the start of the row (a
+  stray `0` while typing a count jumps here; unbind `0` from `first_column` in
+  the config if that bites)
 - `$`: last column
 - `Ctrl-d`: half a page down
 - `Ctrl-u`: half a page up
@@ -233,7 +234,9 @@ Counts work as in vim: a number before a motion repeats it (`5j`, `3l`, `2w`,
 rows. `0` on its own still goes to the first column. Vertical motions stop at
 the first data row; the frozen header is never selected, and an overshooting
 count such as `200k` in a 150-row file lands on the first row. Vertical
-motions keep the horizontal scroll where it was. Horizontal motions stop at
+motions keep the horizontal scroll where it was; a horizontal motion that
+reaches the first column scrolls the view back with it, even when that column
+is frozen and was on screen all along. Horizontal motions stop at
 the first and last column, as in vim; `wrap_columns = true` in the
 `[movement]` section of the config file makes `h`, `l`, `w` and `b` continue
 from one edge to the other instead.

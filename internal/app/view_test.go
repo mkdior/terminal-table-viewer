@@ -118,6 +118,44 @@ func TestVerticalMotionsKeepTheHorizontalScroll(t *testing.T) {
 	}
 }
 
+// The first column is frozen, so it is drawn whatever the horizontal scroll:
+// nothing in tview or in pinColumnOffset moves the view when the cursor lands
+// on it. A motion that reaches it must scroll back by itself, or 0 from the
+// right edge would only move the cursor and the next l would snap the view.
+func TestReachingTheFirstColumnScrollsTheViewBack(t *testing.T) {
+	screen := wideUI(t)
+	draw := func() int {
+		mainView.Draw(screen)
+		screen.Show()
+		_, col := bufferTable.GetOffset()
+		return col
+	}
+	for _, keys := range []string{"0", "^", "9 9 h", "9 9 b"} {
+		bufferTable.Select(1, 11)
+		if off := draw(); off == 0 {
+			t.Fatalf("%q: the last column must scroll the view right first", keys)
+		}
+		press(t, keys)
+		off := draw()
+		_, col := bufferTable.GetSelection()
+		if col != 0 || off != 0 {
+			t.Errorf("%q: cursor column %d, column offset %d, want 0 and 0", keys, col, off)
+		}
+		if out := screenText(screen); !strings.Contains(out, "r1c1xxxx") {
+			t.Errorf("%q: the second column must come back on screen:\n%s", keys, out)
+		}
+	}
+
+	// A vertical motion with the cursor already in the frozen column keeps the
+	// scroll, as every other vertical motion does.
+	bufferTable.Select(1, 0)
+	bufferTable.SetOffset(0, 4)
+	press(t, "j")
+	if off := draw(); off != 4 {
+		t.Errorf("j in the frozen column must keep the horizontal scroll, offset %d", off)
+	}
+}
+
 func TestCursorRowIsTinted(t *testing.T) {
 	screen := wideUI(t)
 	bufferTable.Select(2, 1)
