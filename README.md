@@ -239,7 +239,8 @@ from one edge to the other instead.
   `dgg`) or the columns a horizontal one spans (`dl`, `dh`, `d$`, `d0`)
 - `d` in visual mode: remove the selected rows (`V`) or columns (`v`)
 - `x`: cut the cell to the clipboard and empty it; with a count, N cells to
-  the right; in visual mode every selected cell
+  the right; in visual mode every selected cell; in visual line mode the
+  selected rows are removed, as `d` does
 - `E`: edit the cell in a vim line editor (see [Editing](#editing-1))
 - `i`, `Ctrl-I`, `a`: edit the cell, inserting at the start or appending at
   the end; in visual mode the text goes into every selected cell
@@ -464,7 +465,9 @@ does with `timeoutlen`.
 `x` cuts the cell under the cursor (`3x` three cells; in visual mode every
 selected cell): the values go to the clipboard and the register as a
 tab-separated block, then the cells are emptied, so `p` puts them back
-elsewhere. `E` opens the cell in a line editor that behaves like a vim line;
+elsewhere. In visual line mode `x` removes the selected rows, exactly as `d`
+does, rather than leaving rows of blanks behind. `E` opens the cell in a line
+editor that behaves like a vim line;
 `i` and `a` open it straight in insert mode, `cc` clears it first.
 
 - Motions: `h l 0 ^ $ | w b e W B E f F t T ; ,`, with counts.

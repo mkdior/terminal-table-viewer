@@ -224,6 +224,33 @@ func TestVisualDeleteAndClear(t *testing.T) {
 	}
 }
 
+func TestVisualLineCutRemovesTheRows(t *testing.T) {
+	setupEditTable(t)
+	ran := stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
+	press(t, "j V j x") // rows a2 and a3: no row of blanks may stay behind
+	if got := joined(column(b, 0)); got != "h1 a1 a4" || visual != visualOff {
+		t.Fatalf("V j x: %q visual=%v", got, visual)
+	}
+	if b.rowLen != 3 || !strings.Contains(statusMessage, "Removed 2 rows") {
+		t.Errorf("rows %d status %q", b.rowLen, statusMessage)
+	}
+	if got := (*ran)[len(*ran)-1]; got != "xclip:a2\tb2\tc2\td2\na3\tb3\tc3\td3" {
+		t.Errorf("the cut rows go to the clipboard: %q", got)
+	}
+	press(t, "G p") // and to the register: the block is laid out from the last row, clipped
+	if got := strings.Join(b.cont[2], " "); got != "a2 b2 c2 d2" {
+		t.Errorf("p after the cut: %q", got)
+	}
+	press(t, "u u")
+	if got := joined(column(b, 0)); got != "h1 a1 a2 a3 a4" || dirty() {
+		t.Errorf("undo restores the rows: %q", got)
+	}
+	press(t, "g g 0 v j x") // a block selection still cuts the cells in place
+	if b.cont[1][0] != "" || b.cont[2][0] != "" || b.rowLen != 5 {
+		t.Errorf("v j x must empty the cells and keep the rows: %v", column(b, 0))
+	}
+}
+
 func TestCutCellsWithoutClipboardStillCuts(t *testing.T) {
 	setupEditTable(t)
 	stubClipboard(t, map[string]bool{}, map[string]string{}, "linux", false)

@@ -180,9 +180,16 @@ func dispatch(act action) {
 			}
 			return
 		case actClear:
+			// x cuts the selected cells; in visual line mode the rows themselves
+			// go, as with d: a cut leaves no row of blanks behind, as in vim.
 			r1, c1, r2, c2 := visualRect()
+			kind := visual
 			visual = visualOff
-			clearCells(r1, c1, r2, c2)
+			if kind == visualRows {
+				deleteRows(r1, r2)
+			} else {
+				clearCells(r1, c1, r2, c2)
+			}
 			return
 		case actInsert, actAppend, actChange:
 			// Block insert: type once, apply to every selected cell.
