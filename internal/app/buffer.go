@@ -117,13 +117,13 @@ func createNewBuffer() *Buffer {
 
 // createNewBufferWithData creates a Buffer from existing data
 func createNewBufferWithData(ss [][]string, strict bool) (*Buffer, error) {
-	b = createNewBuffer()
+	buf := createNewBuffer()
 	for _, s := range ss {
-		if err := b.contAppendSli(s, strict); err != nil {
+		if err := buf.contAppendSli(s, strict); err != nil {
 			return nil, err
 		}
 	}
-	return b, nil
+	return buf, nil
 }
 
 // contAppendSli appends a row to the buffer

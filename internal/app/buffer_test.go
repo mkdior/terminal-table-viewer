@@ -289,8 +289,8 @@ func TestBuffer_selectBySearch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b.selectBySearch(tt.args.s)
-			if got := b.selectedCell; !reflect.DeepEqual(got, tt.want) {
+			tt.b.selectBySearch(tt.args.s)
+			if got := tt.b.selectedCell; !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("selectBySearch() = %v, want %v", got, tt.want)
 			}
 		})
