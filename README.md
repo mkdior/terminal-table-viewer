@@ -10,8 +10,24 @@ TTV continues the work originally created by Xiuqiang (Stephen) Chen
 ([@codechenx](https://github.com/codechenx)). This repository continues that
 work after the original project went unmaintained. See [Credits](#credits).
 
+## Why use this?
+
+`ttv` is an interactive alternative to `column -t`, `csvlook`, `xsv table`,
+`visidata` or a spreadsheet for looking at CSV, TSV, PSV and other delimited
+files in the terminal: `column -t`, `awk -F,` and `cut -d,` print a table and
+stop, while `ttv` lets you scroll it with vim keys, keep the header frozen,
+search, filter, sort, see per-column statistics, edit cells in place and
+write the file back, all from an SSH session. It pretty-prints tabular data
+with aligned columns and detected delimiters, opens gzip files and shell
+pipes (`ps aux | ttv`, `kubectl get pods | ttv`), tabs through several files
+at once, and streams files larger than RAM from disk instead of loading them.
+If you have wanted `less` for CSV files, `vim` for tables, or a lightweight
+terminal CSV viewer and editor without Python or a GUI, that is what it is:
+a single static Go binary.
+
 ## Table of Contents
 
+- [Why use this?](#why-use-this)
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)

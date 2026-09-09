@@ -74,7 +74,7 @@ release:
 
 nfpms:
   - maintainer: mkdior
-    description: "Terminal Table Viewer (TTV) - fast, feature-rich CSV/TSV/delimited file viewer for the command line"
+    description: "Terminal Table Viewer (TTV): fast terminal viewer and editor for CSV, TSV and delimited files with vim keys, frozen header, search, filter, sort, statistics, in-place editing, tabs, gzip and pipe input, and streaming of files larger than RAM; an alternative to column -t, csvlook and spreadsheets for tabular data over SSH"
     homepage: https://github.com/mkdior/terminal-table-viewer
     license: Apache-2.0
     formats:

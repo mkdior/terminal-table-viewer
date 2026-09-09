@@ -1,0 +1,115 @@
+# ttv (Terminal Table Viewer)
+
+> ttv is a fast terminal viewer and editor for CSV, TSV and other delimited
+> files, written in Go as a single static binary. It shows a file as a
+> scrollable table with a frozen header and vim key bindings, detects the
+> delimiter, searches, filters, sorts, computes per-column statistics, edits
+> cells and writes the file back, opens several files in tabs, reads gzip
+> files and shell pipes, and streams files larger than RAM from disk. It is
+> an interactive alternative to `column -t`, `csvlook`, `xsv table`, `awk` or
+> a spreadsheet for looking at tabular data over SSH.
+
+Repository: https://github.com/mkdior/terminal-table-viewer
+Licence: Apache License 2.0. Language: Go (module
+`github.com/mkdior/terminal-table-viewer`, binary `ttv`, package
+`internal/app`). Continues https://github.com/codechenx/FastTableViewer.
+
+## Install
+
+- Script (Linux, macOS): `curl -sSL https://raw.githubusercontent.com/mkdior/terminal-table-viewer/main/install.sh | bash`
+- Go: `go install github.com/mkdior/terminal-table-viewer/cmd/ttv@latest`
+- Release archives for Linux, macOS and Windows on the GitHub releases page.
+
+## Usage
+
+Syntax: `ttv [FILE...] [flags]`. Several files open in tabs; stdin is read
+when it is a pipe (`cat data.csv | ttv`, `ps aux | ttv`).
+
+Flags:
+
+- `-s`, `--separator <char>`: delimiter (`\t` for tab); detected by default
+- `-n`, `--lines <N>`: load only the first N lines
+- `--skip-prefix <p1,p2>`: skip lines starting with a prefix (`"##"`, `"#"`)
+- `--skip-lines <N>`: skip the first N lines
+- `--columns <1,3>` / `--hide-columns <2>`: show or hide columns (1-based)
+- `-f`, `--freeze <mode>`: `-1` none, `0` header row and first column
+  (default), `1` header row, `2` first column
+- `--strict`: fail on rows with a different column count
+- `--async` (default true): render progressively while loading
+- `-m`, `--memory <MB>`: memory budget shared by all open files; loading
+  stops at the limit and keeps what fits
+- `-p`, `--tabs`: one tab per file (always the case; vim's `-p`)
+- `--stream`: read the file from disk as viewed, read-only
+- `--stream-above <size>`: stream plain files from this size on (default
+  `1G`; `0` turns it off)
+- `--theme <name>`, `--config <path>`, `--dump-config`, `-h`, `-v`
+
+## Keys (defaults; every one is remappable)
+
+- Movement: `h j k l`, arrows, `w b` (columns), `gg G` (first, last row),
+  `0 ^ $`, `Ctrl-d Ctrl-u`, `PgDn PgUp`; counts as in vim (`5j`, `12G`)
+- Search: `/` (plain or regex), `n N` next or previous match, `Esc` clears
+- Filter: `f` on the current column (contains, equals, starts with, ends
+  with, regex, `> < >= <=`, unique, unique rows), `r` removes it
+- Sort and types: `s` ascending, `S` descending, `t` toggles the column type
+- Yank: `y` cell, `Y` row, `p`/`P` paste; `v`/`Ctrl-v` block selection,
+  `V` rows, `o` swap the anchor; the clipboard is detected (WSL, macOS,
+  Wayland, X11, Termux) and OSC 52 is sent too
+- Edit (staged like fdisk, written with `W`, undone with `u`): `dd` and
+  `d`+motion remove rows or columns, `x` cuts cells (rows in visual line
+  mode), `E i a cc` open a vim line editor on the cell, `ir or ic oc` insert
+  rows or columns, every write keeps a backup of the previous version
+- Tabs: `gt` next, `gT` previous, `Ngt` tab N, `q` closes the tab (the
+  last one quits), `Ctrl-C` quits every tab and asks about unwritten changes
+- View: `_` width limit, `zc zo za zR` fold (hide) columns, `I` statistics,
+  `?` help
+
+## Configuration
+
+`~/.config/ttv/config.toml` (`$XDG_CONFIG_HOME/ttv/config.toml`, or
+`--config`). `ttv --dump-config` prints the defaults with comments.
+
+```toml
+[keys]                  # action = key or [keys]; "g g" is a chord; [] unbinds
+move_left = ["h", "left"]
+quit      = ["q", "alt+q"]
+
+[theme]
+name   = "subcore"      # built-in scheme to start from
+accent = "colour101"    # roles: background text dim panel stripe border
+                        # accent alert selection cursorline
+
+[movement]
+wrap_columns = false    # h l w b continue past the first and last column
+
+[clipboard]
+command = ""            # program reading the text on stdin; empty detects one
+osc52   = true          # also send the OSC 52 escape
+
+[preview]
+position    = "bottom"  # bottom, top or cursor: where a cut cell's value shows
+split_items = true      # list values one item per line
+separator   = ";"
+
+[backup]
+enabled = true
+dir     = ""            # empty: $XDG_STATE_HOME/ttv/backup
+keep    = 20
+
+[load]
+stream_above = "1G"     # stream plain files from this size; "0" loads all
+```
+
+## Large files
+
+Files of 1GB or more are streamed: an index of row offsets is built in the
+background and rows are read from disk as they come on screen, so memory
+stays at a few MB. Streamed tables are read-only; search and filters run
+over the file in the background (Esc cancels), statistics use the first
+100,000 rows. Smaller files load into memory and can be edited; `-m` caps
+the memory of all open files together and `-n`/`--skip-lines` load a window.
+
+## More
+
+- Full documentation: https://github.com/mkdior/terminal-table-viewer/blob/main/README.md
+- Releases: https://github.com/mkdior/terminal-table-viewer/releases
