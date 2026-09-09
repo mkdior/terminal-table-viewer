@@ -57,7 +57,8 @@ Flags:
   Wayland, X11, Termux) and OSC 52 is sent too
 - Edit (staged like fdisk, written with `W`, undone with `u`): `dd` and
   `d`+motion remove rows or columns, `x` cuts cells (rows in visual line
-  mode), `E i a cc` open a vim line editor on the cell, `ir or ic oc` insert
+  mode), `E i a cc R` open a vim line editor on the cell (`cc` and `R` clear
+  it first), `ir or ic oc` insert
   rows or columns, every write keeps a backup of the previous version
 - Tabs: `gt` next, `gT` previous, `Ngt` tab N, `q` closes the tab (the
   last one quits), `Ctrl-C` quits every tab and asks about unwritten changes

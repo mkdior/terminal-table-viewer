@@ -354,6 +354,73 @@ func TestBulkEditInVisualMode(t *testing.T) {
 	}
 }
 
+// R is the second key of the change action: it empties the cell and waits for
+// the new value, on one cell and over a block alike.
+func TestReplaceCellWithR(t *testing.T) {
+	setupEditTable(t)
+	t.Cleanup(func() { cellEdit, lineRegister, lineLastChange = nil, nil, nil })
+
+	press(t, "R")
+	if cellEdit == nil || cellEdit.bulk != nil || cellEdit.ed.mode != editInsert {
+		t.Fatalf("R must open the editor in insert mode: %+v", cellEdit)
+	}
+	if len(cellEdit.ed.text) != 0 {
+		t.Errorf("R must clear the cell first, text %q", string(cellEdit.ed.text))
+	}
+	if !strings.Contains(statusMessage, "-- INSERT --") {
+		t.Errorf("status %q", statusMessage)
+	}
+	press(t, "z e d enter")
+	if b.cont[1][0] != "zed" {
+		t.Errorf("R then typing replaces the value: %q", b.cont[1][0])
+	}
+	press(t, "u")
+	if b.cont[1][0] != "a1" || dirty() {
+		t.Errorf("u restores the cell: %q", b.cont[1][0])
+	}
+
+	// Applying with nothing typed leaves the cell empty; Esc from the insert
+	// sub-mode only steps back to normal, and a second Esc cancels, as with cc.
+	press(t, "R enter")
+	if cellEdit != nil || b.cont[1][0] != "" {
+		t.Errorf("R Enter empties the cell: %q editor %v", b.cont[1][0], cellEdit)
+	}
+	press(t, "u")
+	press(t, "R x esc")
+	if cellEdit == nil || cellEdit.ed.mode != editNormal {
+		t.Fatalf("Esc from insert steps back to normal: %+v", cellEdit)
+	}
+	press(t, "esc")
+	if cellEdit != nil || b.cont[1][0] != "a1" || dirty() {
+		t.Errorf("a second Esc cancels: %q dirty=%v", b.cont[1][0], dirty())
+	}
+
+	// A block selection: every selected cell gets the typed value.
+	press(t, "ctrl+v j l R q z esc")
+	if cellEdit != nil {
+		t.Fatal("Esc must apply and close the bulk edit")
+	}
+	for r := 1; r <= 2; r++ {
+		for c := 0; c <= 1; c++ {
+			if b.cont[r][c] != "qz" {
+				t.Errorf("cell %d,%d = %q, want qz", r, c, b.cont[r][c])
+			}
+		}
+	}
+	if b.cont[1][2] != "c1" || editSummary() != "4 cells changed" {
+		t.Errorf("cells outside the block untouched; summary %q", editSummary())
+	}
+	press(t, "u")
+	if got := joined(column(b, 0)); got != "h1 a1 a2 a3 a4" || dirty() {
+		t.Errorf("one undo restores the block: %q", got)
+	}
+
+	// Both keys reach the same action, and the help lists them.
+	if got := keys.keysFor(actChange); got != "c c, R" {
+		t.Errorf("change keys = %q", got)
+	}
+}
+
 func TestBulkEditThroughFilteredView(t *testing.T) {
 	setupEditTable(t)
 	t.Cleanup(func() { cellEdit = nil })

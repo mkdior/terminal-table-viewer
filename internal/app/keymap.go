@@ -112,7 +112,7 @@ var actionCatalog = []struct {
 	{actionInfo{actEdit, "Edit", "Edit the cell in a vim line editor: Enter applies, Esc cancels", false}, []string{"E"}},
 	{actionInfo{actInsert, "Edit", "Edit the cell, inserting at the start; in visual mode the text is inserted in every selected cell (Esc applies)", false}, []string{"i", "ctrl+i"}},
 	{actionInfo{actAppend, "Edit", "Edit the cell, appending at the end; in visual mode the text is appended to every selected cell", false}, []string{"a"}},
-	{actionInfo{actChange, "Edit", "Clear the cell and type its new value; in visual mode every selected cell gets it", false}, []string{"c c"}},
+	{actionInfo{actChange, "Edit", "Clear the cell and type its new value; in visual mode every selected cell gets it", false}, []string{"c c", "R"}},
 	{actionInfo{actInsertRow, "Edit", "Insert an empty row above the cursor and start typing in it; with a count, N rows; in visual mode above the selection", false}, []string{"i r"}},
 	{actionInfo{actOpenRow, "Edit", "Insert an empty row below the cursor and start typing in it; with a count, N rows; in visual mode below the selection", false}, []string{"o r"}},
 	{actionInfo{actInsertColumn, "Edit", "Insert an empty column left of the cursor and name it; with a count, N columns; in visual mode left of the selection", false}, []string{"i c"}},

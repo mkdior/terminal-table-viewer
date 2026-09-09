@@ -281,8 +281,8 @@ from one edge to the other instead.
 - `E`: edit the cell in a vim line editor (see [Editing](#editing-1))
 - `i`, `Ctrl-I`, `a`: edit the cell, inserting at the start or appending at
   the end; in visual mode the text goes into every selected cell
-- `cc`: clear the cell and type its new value; in visual mode every selected
-  cell gets it
+- `cc`, `R`: clear the cell and type its new value; in visual mode every
+  selected cell gets it
 - `ir`, `or`: insert an empty row above or below the cursor (with a count, N
   rows) and start typing in it; in visual mode around the selection
 - `ic`, `oc`: insert an empty column left or right of the cursor (with a
@@ -549,7 +549,10 @@ tab-separated block, then the cells are emptied, so `p` puts them back
 elsewhere. In visual line mode `x` removes the selected rows, exactly as `d`
 does, rather than leaving rows of blanks behind. `E` opens the cell in a line
 editor that behaves like a vim line;
-`i` and `a` open it straight in insert mode, `cc` clears it first.
+`i` and `a` open it straight in insert mode, `cc` and `R` clear it first, so
+`R` over a cell empties it and waits for the new value. (Inside the editor
+`R` is vim's replace mode, as below; the table binding only acts before the
+editor is open.)
 
 - Motions: `h l 0 ^ $ | w b e W B E f F t T ; ,`, with counts.
 - Operators: `d c y` with motions or text objects (`iw aw iW aW`, `i"`,
@@ -569,11 +572,12 @@ editor that behaves like a vim line;
 
 #### Bulk edit
 
-In visual mode `i` (or Ctrl-I), `a` and `cc` work like vim's block insert.
-The editor opens on the first selected cell; what you type is inserted at the
-start (`i`), appended (`a`) or replaces the value (`cc`) in every selected
-cell when you press Esc or Enter, as one undo step. Select five empty cells
-with `Ctrl-v`, press `Ctrl-I`, type, Esc: all five hold the text.
+In visual mode `i` (or Ctrl-I), `a` and `cc` or `R` work like vim's block
+insert. The editor opens on the first selected cell; what you type is
+inserted at the start (`i`), appended (`a`) or replaces the value (`cc`, `R`)
+in every selected cell when you press Esc or Enter, as one undo step. Select
+five empty cells with `Ctrl-v`, press `Ctrl-I`, type, Esc: all five hold the
+text.
 
 #### Paste
 
