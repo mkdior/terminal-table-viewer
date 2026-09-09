@@ -28,9 +28,13 @@ func type2name(i int) string {
 
 var app *tview.Application
 var UI *tview.Pages
-var b *Buffer
 var args Args
 var debug bool
+
+// The state of the table in front. With several files open, each tab parks
+// these while another is in front (see tabs.go); the code below works on the
+// table in front without knowing about tabs.
+var b *Buffer
 var statusMessage string         // Track status message for footer updates
 var mainPage *tview.Frame        // Reference to main page for footer updates
 var mainView *cellPreview        // Main page plus the floating full-value preview
@@ -112,6 +116,7 @@ func initView() {
 	edits = nil
 	loadStopped = false
 	cellEdit, lineRegister, lineLastChange, tableRegister = nil, nil, nil, nil
+	tabs, current, loaded, budget = nil, -1, nil, nil
 }
 
 // stop UI

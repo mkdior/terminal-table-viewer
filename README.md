@@ -54,6 +54,8 @@ controls.
   selection, `x` cuts cells, removals go to the clipboard, `E` opens a vim
   line editor on the cell, `u` undoes; every write keeps a backup of the
   previous version
+- **Tabs**: `ttv a.csv b.csv` opens one tab per file, all loading at once
+  within one memory budget; `gt` and `gT` switch, `q` closes a tab
 - **Mouse support**: click to select, scroll to move, click buttons in dialogs
 - **Pipe support**: reads from stdin for use in shell pipelines
 
@@ -132,6 +134,7 @@ make build        # produces ./ttv with the version stamped from git
 ```bash
 ttv data.csv                       # view a CSV file
 ttv data.tsv                       # view a TSV file
+ttv a.csv b.csv c.tsv              # several files, one tab each (gt switches)
 cat data.csv | ttv                 # read from stdin
 ps aux | ttv                       # any whitespace-delimited output
 ttv data.txt -s "|"                # custom delimiter
@@ -141,7 +144,10 @@ ttv file.vcf --skip-prefix "##"    # skip metadata lines
 
 ## Command Line Flags
 
-Syntax: `ttv [FILE] [flags]`
+Syntax: `ttv [FILE...] [flags]`
+
+Several files open in tabs (see [Tabs](#tabs)); every flag applies to each of
+them.
 
 - `-s`, `--separator <char>`: the delimiter; use `\t` for tab. By default it
   is detected from the first lines, with `.csv` and `.tsv` suffixes as a hint.
@@ -159,7 +165,10 @@ Syntax: `ttv [FILE] [flags]`
   `--async=false` loads everything first and prints progress to the terminal.
 - `-m`, `--memory <MB>`: stop loading when the estimated memory use reaches
   the limit (`0`, the default, means unlimited); the rows loaded so far stay
-  viewable and the footer says why loading stopped.
+  viewable and the footer says why loading stopped. With several files the
+  limit is one budget for all of them together.
+- `-p`, `--tabs`: open each file in its own tab. That is what several files
+  always do; the flag is accepted for vim's `-p` habit.
 - `--theme <name>`: a built-in colour scheme (the list is in `--help`); the
   default is the `name` in the config file, else `subcore`.
 - `--config <path>`: the config file with key bindings and colours; the
@@ -254,6 +263,11 @@ from one edge to the other instead.
 - `u`: undo the last edit; with a count, N edits
 - `W`: write the table back to the file
 
+### Tabs
+
+- `gt`: next tab; `3gt` goes to tab 3
+- `gT`: previous tab; `2gT` goes two tabs back
+
 ### View
 
 - `_`: toggle the width limit on the current column
@@ -265,7 +279,10 @@ from one edge to the other instead.
 - `zR`: show every hidden column
 - `I`: statistics for the current column
 - `?`: help
-- `q`: quit; asks whether to write or discard pending edits
+- `q`: close the tab; asks whether to write or discard its pending edits, and
+  quits when it was the last tab
+- `Ctrl-C`: quit, closing every tab; asks about the unwritten changes of all
+  of them at once
 
 ### Mouse
 
@@ -287,6 +304,40 @@ after the load completes, so the column type in the footer may change once.
 
 If loading stops early (memory limit, a line over 1MB, a parse error) the
 footer says so and the rows loaded so far remain fully usable.
+
+### Tabs
+
+`ttv a.csv b.csv c.tsv` opens one tab per file, as `vim -p` does (`-p` is
+accepted, and changes nothing). A tab line above the table numbers the tabs
+and shows the one in front in the accent colour; `gt` and `gT` move to the
+next and previous tab, wrapping around, `3gt` goes to tab 3 and `2gT` two
+tabs back. Each tab is a table of its own: cursor, filters, search, sorting,
+hidden columns, width limits and pending edits all stay with their tab, and
+the footer marks a tab `[+]` in the tab line while it has unwritten changes.
+The registers are shared, so a yank or removal in one tab can be pasted with
+`p` in another, and the clipboard, the keymap and the theme are the same
+everywhere. A visual selection or a half-typed command is dropped when tabs
+switch, as in vim.
+
+Every file loads at once, each on its own goroutine, so the first tab can be
+read while the others fill in. While a tab loads, the tab line shows its
+progress: a percentage for a plain file, `loading` for a gzip file or a pipe,
+whose size is not known up front; a tab in front shows the usual progress
+bar. With `-m` the limit is one budget shared by all the files, so two large
+files together stop at the figure given rather than each taking it; the tab
+whose load hit the limit says so in its footer and keeps what it loaded.
+
+`q` closes the tab in front and shows its right neighbour (the left one when
+it was last); with pending edits it asks first whether to write them, discard
+them or stay, as quitting does. Closing the last tab quits. Closing a tab
+whose file is still loading stops the load and gives the memory back. `Ctrl-C`
+quits with every tab closed: when several tabs have unwritten changes the
+prompt lists each with its summary, `w` writes them all in turn (a write that
+fails leaves that tab in front with the reason in the footer), `d` discards
+them all, and when one of them cannot be written the prompt only offers to
+discard. Among several files, one with nothing to show (empty, or header only)
+is skipped with a note in the first tab's footer instead of stopping ttv;
+a file that does not exist still stops it before anything loads.
 
 ### Data types and sorting
 
@@ -426,9 +477,11 @@ are pending and sums them up after each one ("1 column (Age) and 3 rows
 removed, 2 cells changed, sorted by Age ascending"). `u` undoes edits one at
 a time, structural ones included.
 
-`q` (or Ctrl-C) asks whether to write, discard or stay while edits are
-pending. `w`, `d`, `c` or Esc answer directly; Tab moves between the buttons,
-and the bright one is the one Enter will press.
+`q` asks whether to write, discard or stay while edits are pending, before
+closing the tab or, with one tab open, quitting. `w`, `d`, `c` or Esc answer
+directly; Tab moves between the buttons, and the bright one is the one Enter
+will press. Ctrl-C quits with every tab closed and asks the same about the
+unwritten changes of all tabs at once (see [Tabs](#tabs)).
 
 #### Rows and columns
 
@@ -631,14 +684,18 @@ Actions, by section of the help dialog:
 - Edit: `delete`, `clear`, `edit`, `insert`, `append`, `change`,
   `paste`, `insert_row`, `open_row`, `insert_column`, `open_column`, `undo`,
   `write`
+- Tabs: `next_tab`, `prev_tab`
 - View: `toggle_width`, `fold_column`, `unfold_column`, `toggle_fold`,
   `unfold_all`, `stats`, `help`, `quit`
+
+Ctrl-C is not an action: it always quits, closing every tab, before the
+keymap sees it.
 
 ```toml
 [keys]
 move_left  = ["h", "left"]
 first_row  = "g g"
-quit       = ["q", "ctrl+c"]
+quit       = ["q", "alt+q"]
 stats      = []          # unbound
 ```
 
@@ -744,6 +801,12 @@ without a limit. For very large inputs today:
   keeps that much viewable
 - `ttv big.csv -n 1000000` loads the first million lines
 - `ttv big.csv --skip-lines 5000000 -n 1000000` looks at a window further in
+
+Several files open in tabs load at the same time, so their sizes add up:
+`ttv a.csv b.csv -m 4096` holds all of them to roughly 4GB together, and a
+tab closed with `q` while its file is still loading stops reading and frees
+what it held. Gzip files decompress as they load, one CPU each, and show a row
+counter rather than a percentage because their uncompressed size is unknown.
 
 A streaming design that indexes row offsets on disk and loads only the visible
 window is the planned next step and would lift this limit.

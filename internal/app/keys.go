@@ -501,6 +501,10 @@ func runAction(act action, rawCount, count int) {
 		showCurrentColumnStats()
 	case actHelp:
 		showHelpDialog()
+	case actNextTab:
+		nextTab(rawCount)
+	case actPrevTab:
+		prevTab(count)
 	case actQuit:
 		requestQuit()
 	}

@@ -441,8 +441,8 @@ func expandPath(p string) (string, error) {
 
 // handleAppKey is the application-level input capture. Ctrl-C would stop the
 // application behind the keymap's back; it goes through the quit flow instead
-// so pending edits get their write/discard prompt, and in the cell editor it
-// acts as Escape, as it does in vim's insert mode.
+// so pending edits get their write/discard prompt, in every open tab, and in
+// the cell editor it acts as Escape, as it does in vim's insert mode.
 func handleAppKey(event *tcell.EventKey) *tcell.EventKey {
 	if event.Key() != tcell.KeyCtrlC {
 		return event
@@ -451,37 +451,67 @@ func handleAppKey(event *tcell.EventKey) *tcell.EventKey {
 		cellEdit.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
 		return nil
 	}
-	requestQuit()
+	requestQuitAll()
 	return nil
 }
 
 // stopApp ends the application; a variable so tests can observe quitting.
 var stopApp = func() { app.Stop() }
 
-// requestQuit quits the application, asking first what to do with pending
-// edits: write them, discard them, or stay. Ctrl-C arrives here as well.
-// Staying puts the focus back where it was, so a dialog that was open keeps
-// working.
+// requestQuit is q: it closes the tab in front, asking first what to do with
+// its pending edits: write them, discard them, or stay. Closing the last tab
+// quits; Ctrl-C with one tab open arrives here as well.
 func requestQuit() {
+	if len(tabs) > 1 {
+		confirmChanges(" before closing its tab", "Close the tab and discard them?", closeCurrentTab)
+		return
+	}
+	confirmChanges("", "Quit and discard them?", stopApp)
+}
+
+// confirmChanges runs leave at once when the table in front has no pending
+// edits, and otherwise asks first: write them (when they can be written) and
+// leave, discard them and leave, or stay. when completes the question "Write
+// the changes to <file>...?", and discardQuestion is asked instead when the
+// changes cannot be written. Staying puts the focus back where it was, so a
+// dialog that was open keeps working.
+func confirmChanges(when, discardQuestion string, leave func()) {
 	if !dirty() {
-		stopApp()
+		leave()
 		return
 	}
 	if UI == nil || UI.HasPage("quitDialog") {
 		return
 	}
 	cancelOperator()
-	previous := app.GetFocus()
-	if previous == nil {
-		previous = bufferTable
-	}
 	text := editSummary() + ".\n\n"
 	buttons := []string{"Write", "Discard", "Cancel"}
 	if reason := writeBlocker(); reason != "" {
-		text += "The changes cannot be written: " + reason + ".\n\nQuit and discard them?  (d discards, c or Esc stays)"
+		text += "The changes cannot be written: " + reason + ".\n\n" + discardQuestion + "  (d discards, c or Esc stays)"
 		buttons = []string{"Discard", "Cancel"}
 	} else {
-		text += "Write the changes to " + filepath.Base(args.FileName) + "?  (w writes, d discards, c or Esc stays)"
+		text += "Write the changes to " + filepath.Base(args.FileName) + when + "?  (w writes, d discards, c or Esc stays)"
+	}
+	openQuitDialog(text, buttons, func(label string) {
+		switch label {
+		case "Write":
+			if writeTable() {
+				leave()
+			}
+		case "Discard":
+			leave()
+		}
+	})
+}
+
+// openQuitDialog shows a write/discard/stay modal with text and buttons over
+// the page in front. The first letter of a button presses it, Esc stays, and
+// a choice dismisses the dialog, putting the focus back where it was, before
+// choose runs with the button's label.
+func openQuitDialog(text string, buttons []string, choose func(label string)) {
+	previous := app.GetFocus()
+	if previous == nil {
+		previous = bufferTable
 	}
 	modal := tview.NewModal().SetText(text).AddButtons(buttons)
 	modal.SetBackgroundColor(theme.Panel).SetTextColor(theme.Text)
@@ -494,18 +524,11 @@ func requestQuit() {
 		UI.RemovePage("quitDialog")
 		app.SetFocus(previous)
 	}
-	choose := func(label string) {
+	pick := func(label string) {
 		dismiss()
-		switch label {
-		case "Write":
-			if writeTable() {
-				stopApp()
-			}
-		case "Discard":
-			stopApp()
-		}
+		choose(label)
 	}
-	modal.SetDoneFunc(func(_ int, label string) { choose(label) })
+	modal.SetDoneFunc(func(_ int, label string) { pick(label) })
 	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
 			dismiss()
@@ -514,7 +537,7 @@ func requestQuit() {
 		if event.Key() == tcell.KeyRune {
 			for _, label := range buttons {
 				if event.Rune() == unicode.ToLower([]rune(label)[0]) {
-					choose(label)
+					pick(label)
 					return nil
 				}
 			}

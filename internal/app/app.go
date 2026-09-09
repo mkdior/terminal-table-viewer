@@ -5,10 +5,9 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -27,76 +26,8 @@ func setupFreezeMode(b *Buffer) {
 	}
 }
 
-// validateDataNotEmpty checks if buffer has data rows and exits if empty
-func validateDataNotEmpty(b *Buffer, source string) error {
-	dataRows := b.rowLen - b.rowFreeze
-	if b.rowLen == 0 || dataRows <= 0 {
-		stopView()
-		if b.rowLen == 0 {
-			fmt.Printf("%s is empty (no rows)\n", source)
-		} else {
-			fmt.Printf("%s is empty (only header, no data rows)\n", source)
-		}
-		os.Exit(0)
-	}
-	return nil
-}
-
-// startAsyncUpdateHandler manages UI updates during async loading
-func startAsyncUpdateHandler(updateChan <-chan bool, doneChan <-chan error) {
-	go func() {
-		ticker := time.NewTicker(20 * time.Millisecond)
-		defer ticker.Stop()
-
-		loadComplete := false
-		for !loadComplete {
-			select {
-			case <-updateChan:
-				// Update available - will be handled by ticker
-			case err := <-doneChan:
-				loadComplete = true
-				// The UI is already up: report the outcome in the footer and keep
-				// whatever was loaded viewable instead of tearing the screen down.
-				status := "Loaded " + strconv.Itoa(b.rowLen) + " rows"
-				if err != nil {
-					status = "Stopped after " + strconv.Itoa(b.rowLen) + " rows: " + err.Error()
-				}
-				app.QueueUpdateDraw(func() {
-					loadStopped = err != nil
-					drawBuffer(b, bufferTable)
-					updateFooterWithStatus(status)
-				})
-			case <-ticker.C:
-				// Periodic UI update
-				app.QueueUpdateDraw(func() {
-					drawBuffer(b, bufferTable)
-
-					// Keep cursor on the first data row if user hasn't moved it
-					if !userMovedCursor {
-						row, col := bufferTable.GetSelection()
-						if first := firstDataRow(b); row != first {
-							bufferTable.Select(first, col)
-						}
-					}
-
-					if progress := &baseBuffer().progress; progress.TotalBytes.Load() > 0 {
-						// Show progress bar for files
-						percent := progress.GetPercentage()
-						progressBar := makeProgressBar(percent, 15)
-						updateFooterWithStatus(fmt.Sprintf("Loading... %s", progressBar))
-					} else {
-						// Show row count for pipes (no file size)
-						updateFooterWithStatus("Loading... " + strconv.Itoa(b.rowLen) + " rows")
-					}
-				})
-			}
-		}
-	}()
-}
-
 // loadDataAsync starts async loading and waits for initial data
 func loadDataAsync(loader func(*Buffer, chan<- bool, chan<- error), b *Buffer) (chan bool, chan error, error) {
-	userMovedCursor = false // Reset cursor tracking
 	updateChan := make(chan bool, 10)
 	doneChan := make(chan error, 1)
 
@@ -125,46 +56,27 @@ func runApp() error {
 	return nil
 }
 
-// loadAndDisplayAsync handles the complete async loading workflow
-func loadAndDisplayAsync(loader func(*Buffer, chan<- bool, chan<- error), source string) error {
-	updateChan, doneChan, err := loadDataAsync(loader, b)
-	if err != nil {
+// display opens the inputs in tabs and runs the UI: the files named, one tab
+// each, or the pipe when stdin is one. label names the kind of input in the
+// message for an input with nothing to show, which exits quietly as it
+// always has; when only some of several files are empty they are skipped
+// with a note in the footer instead.
+func display(names []string, pipe io.Reader, sep rune, label string) error {
+	skipped, err := openTabs(names, pipe, sep)
+	switch {
+	case errors.Is(err, errEmpty):
+		stopView()
+		fmt.Printf("%s is %s\n", label, err)
+		os.Exit(0)
+	case err != nil:
 		return err
-	}
-
-	setupFreezeMode(b)
-	if err := validateDataNotEmpty(b, source); err != nil {
-		return err
-	}
-
-	if err := drawUI(b); err != nil {
-		return err
-	}
-
-	startAsyncUpdateHandler(updateChan, doneChan)
-	return runApp()
-}
-
-// loadAndDisplaySync handles the complete sync loading workflow
-func loadAndDisplaySync(loader func(*Buffer) error, source string) error {
-	if err := loader(b); err != nil {
-		if !errors.Is(err, errMemoryLimit) {
-			return err
+	case len(tabs) == 0:
+		stopView()
+		for _, note := range skipped {
+			fmt.Println(note)
 		}
-		// Rows loaded before the cap stay viewable; say so in the footer.
-		statusMessage = "Stopped after " + strconv.Itoa(b.rowLen) + " rows: " + err.Error()
-		loadStopped = true
+		os.Exit(0)
 	}
-
-	setupFreezeMode(b)
-	if err := validateDataNotEmpty(b, source); err != nil {
-		return err
-	}
-
-	if err := drawUI(b); err != nil {
-		return err
-	}
-
 	return runApp()
 }
 
@@ -174,15 +86,16 @@ func Execute(version string) {
 	initView()
 	args.setDefault()
 	RootCmd := &cobra.Command{
-		Use:     "ttv {File_Name}",
+		Use:     "ttv [FILE...]",
 		Version: version,
-		Short:   "Terminal table viewer for delimited file in terminal",
+		Short:   "Terminal table viewer for delimited files in terminal; several files open in tabs",
 		Run: func(cmd *cobra.Command, cmdargs []string) {
 			if args.Sep == "\\t" {
 				args.Sep = "	"
 			}
+			var sep rune // 0 leaves the separator to detection
 			if len([]rune(args.Sep)) > 0 {
-				b.sep = []rune(args.Sep)[0]
+				sep = []rune(args.Sep)[0]
 			}
 
 			if args.DumpConfig {
@@ -204,17 +117,13 @@ func Execute(version string) {
 				fatalError(err)
 			}
 
-			// Configure memory limit
+			// The memory limit is one budget for every open file (unlimited by default).
 			if args.MemoryMB > 0 {
-				b.setMemoryLimit(int64(args.MemoryMB) * 1024 * 1024) // Convert MB to bytes
+				budget = &memoryBudget{limit: int64(args.MemoryMB) * 1024 * 1024}
 			}
-			// else use default (unlimited - 0)
 
 			info, err := os.Stdin.Stat()
 			fatalError(err)
-
-			// Determine if we should use async loading
-			useAsync := args.AsyncLoad
 
 			//check whether from a console pipe
 			if info.Mode()&os.ModeCharDevice != 0 {
@@ -224,46 +133,23 @@ func Execute(version string) {
 					_ = cmd.Help()
 					return
 				}
-				//get file name form console
-				args.FileName = cmdargs[0]
 
-				// Check if file exists before attempting to load
-				if _, err := os.Stat(args.FileName); os.IsNotExist(err) {
-					stopView()
-					fmt.Printf("File not found: %s\n", args.FileName)
-					os.Exit(1)
-				} else if err != nil {
-					stopView()
-					fmt.Printf("Cannot access file: %s\n", err)
-					os.Exit(1)
+				// Check that every file exists before loading any
+				for _, name := range cmdargs {
+					if _, err := os.Stat(name); os.IsNotExist(err) {
+						stopView()
+						fmt.Printf("File not found: %s\n", name)
+						os.Exit(1)
+					} else if err != nil {
+						stopView()
+						fmt.Printf("Cannot access file: %s\n", err)
+						os.Exit(1)
+					}
 				}
-
-				if useAsync {
-					err = loadAndDisplayAsync(func(b *Buffer, updateChan chan<- bool, doneChan chan<- error) {
-						go loadFileToBufferAsync(args.FileName, b, updateChan, doneChan)
-					}, "File")
-					fatalError(err)
-				} else {
-					err = loadAndDisplaySync(func(b *Buffer) error {
-						return loadFileToBuffer(args.FileName, b)
-					}, "File")
-					fatalError(err)
-				}
+				fatalError(display(cmdargs, nil, sep, "File"))
 			} else {
 				// PIPE MODE
-				args.FileName = pipeSourceName
-
-				if useAsync {
-					err = loadAndDisplayAsync(func(b *Buffer, updateChan chan<- bool, doneChan chan<- error) {
-						go loadPipeToBufferAsync(os.Stdin, b, updateChan, doneChan)
-					}, "Pipe")
-					fatalError(err)
-				} else {
-					err = loadAndDisplaySync(func(b *Buffer) error {
-						return loadPipeToBuffer(os.Stdin, b)
-					}, "Pipe")
-					fatalError(err)
-				}
+				fatalError(display([]string{pipeSourceName}, os.Stdin, sep, "Pipe"))
 			}
 		},
 	}
@@ -277,7 +163,8 @@ func Execute(version string) {
 	RootCmd.Flags().IntVarP(&args.Header, "freeze", "f", 0, "Freeze mode: -1=none, 0=row+col, 1=row only, 2=col only")
 	RootCmd.Flags().BoolVar(&args.Strict, "strict", false, "Strict mode: fail on missing/inconsistent data")
 	RootCmd.Flags().BoolVar(&args.AsyncLoad, "async", true, "Progressive rendering while loading")
-	RootCmd.Flags().IntVarP(&args.MemoryMB, "memory", "m", 0, "Memory limit in MB (0=unlimited/default, >0=set limit)")
+	RootCmd.Flags().IntVarP(&args.MemoryMB, "memory", "m", 0, "Memory limit in MB for all open files together (0=unlimited/default, >0=set limit)")
+	RootCmd.Flags().BoolVarP(&args.Tabs, "tabs", "p", false, "Open each file in its own tab (always the case with several files; accepted for vim's -p)")
 	RootCmd.Flags().StringVar(&args.Theme, "theme", "", "Colour scheme: "+strings.Join(themeNames(), ", ")+" (default from config, else "+defaultThemeName+")")
 	RootCmd.Flags().StringVar(&args.ConfigPath, "config", "", "Config file (default ~/.config/ttv/config.toml)")
 	RootCmd.Flags().BoolVar(&args.DumpConfig, "dump-config", false, "Print the default config file and exit")

@@ -62,6 +62,8 @@ const (
 	actUnfoldColumn action = "unfold_column"
 	actToggleFold   action = "toggle_fold"
 	actUnfoldAll    action = "unfold_all"
+	actNextTab      action = "next_tab"
+	actPrevTab      action = "prev_tab"
 )
 
 // actionInfo describes an action for the help dialog and the config file.
@@ -118,6 +120,8 @@ var actionCatalog = []struct {
 	{actionInfo{actPaste, "Edit", "Paste the last yank or removal over the cell; a block is laid out from the cursor, in visual mode a single value fills the selection", false}, []string{"p", "P"}},
 	{actionInfo{actUndo, "Edit", "Undo the last edit; with a count, N edits", false}, []string{"u"}},
 	{actionInfo{actWrite, "Edit", "Write the table back to the file (the original is kept in the backup directory)", false}, []string{"W"}},
+	{actionInfo{actNextTab, "Tabs", "Next tab; with a count, tab N", false}, []string{"g t"}},
+	{actionInfo{actPrevTab, "Tabs", "Previous tab; with a count, N tabs back", false}, []string{"g T"}},
 	{actionInfo{actToggleWidth, "View", "Toggle the 50 character width limit on the current column", false}, []string{"_"}},
 	{actionInfo{actFoldColumn, "View", "Hide the current column behind a narrow marker, like a closed fold; in visual mode the selected columns", false}, []string{"z c"}},
 	{actionInfo{actUnfoldColumn, "View", "Show the hidden column under the cursor again; in visual mode the selected columns", false}, []string{"z o"}},
@@ -125,7 +129,7 @@ var actionCatalog = []struct {
 	{actionInfo{actUnfoldAll, "View", "Show every hidden column", false}, []string{"z R"}},
 	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"I"}},
 	{actionInfo{actHelp, "View", "Show this help", false}, []string{"?"}},
-	{actionInfo{actQuit, "View", "Quit", false}, []string{"q"}},
+	{actionInfo{actQuit, "View", "Close the tab, asking what to do with pending edits; closing the last tab quits (Ctrl-C quits every tab)", false}, []string{"q"}},
 }
 
 // actionByName resolves a config key such as "move_left".

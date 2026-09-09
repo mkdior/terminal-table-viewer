@@ -16,6 +16,7 @@ type Args struct {
 	Theme      string   // name of the colour scheme (see builtinThemes)
 	ConfigPath string   // config file; empty means the default location
 	DumpConfig bool     // print the default config and exit
+	Tabs       bool     // -p: several files always open in tabs; the flag is vim's spelling of it
 }
 
 func (args *Args) setDefault() {
@@ -32,4 +33,5 @@ func (args *Args) setDefault() {
 	args.Theme = ""
 	args.ConfigPath = ""
 	args.DumpConfig = false
+	args.Tabs = false
 }

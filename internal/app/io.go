@@ -253,6 +253,11 @@ func loadToBuffer(src loadSource, b *Buffer, updateChan chan<- bool, showProgres
 	}
 
 	for loadErr == nil {
+		if b.stopLoad.Load() {
+			// The tab was closed: nobody will see the rest, and the buffer is to
+			// be freed, so post-processing is skipped as well.
+			return errLoadCancelled
+		}
 		line, ok := nextLine()
 		if !ok {
 			break

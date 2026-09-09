@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rivo/uniseg"
@@ -67,6 +68,28 @@ func shouldInternColumn(values []string, threshold float64) bool {
 // Loaders stop reading at this point and keep the rows loaded so far.
 var errMemoryLimit = errors.New("memory limit reached")
 
+// errLoadCancelled ends a load whose buffer was told to stop: its tab was
+// closed while the file was still being read.
+var errLoadCancelled = errors.New("load cancelled")
+
+// memoryBudget is the --memory limit shared by every open table: the sum of
+// their estimated sizes may not exceed it, so two large files opened together
+// stay within the one figure given rather than each taking it. Loaders claim
+// from it on their own goroutines, so used is atomic.
+type memoryBudget struct {
+	limit int64
+	used  atomic.Int64
+}
+
+// claim reserves n bytes, or reports the limit with what is used so far.
+func (m *memoryBudget) claim(n int64) error {
+	if used := m.used.Add(n); used > m.limit {
+		m.used.Add(-n)
+		return fmt.Errorf("%w (limit %s, loaded %s)", errMemoryLimit, formatBytes(m.limit), formatBytes(used-n))
+	}
+	return nil
+}
+
 // Buffer represents a table data structure with concurrent access support
 type Buffer struct {
 	sep          rune              // Column separator character
@@ -82,9 +105,11 @@ type Buffer struct {
 	interners    []*stringInterner // String interners per column (nil if not used)
 	internCols   []bool            // Track which columns use interning
 	memoryUsage  int64             // Current estimated memory usage in bytes
-	maxMemory    int64             // Maximum allowed memory in bytes (0 = no limit)
+	maxMemory    int64             // Maximum allowed memory in bytes (0 = no limit); unused with a budget
+	budget       *memoryBudget     // Limit shared with the other open tables, nil for the buffer's own
 	padded       bool              // Some row was shorter than the table and padded with NaN
 	progress     LoadProgress      // The load filling this buffer; each buffer loads on its own
+	stopLoad     atomic.Bool       // Tells the loader to stop reading: the tab was closed
 	source       os.FileInfo       // The file as it was when loaded or last written; nil for a pipe
 }
 
@@ -149,8 +174,8 @@ func (b *Buffer) contAppendSli(s []string, strict bool) error {
 
 	// Check memory limit before adding row
 	rowSize := b.estimateRowSize(s)
-	if b.maxMemory > 0 && b.memoryUsage+rowSize > b.maxMemory {
-		return fmt.Errorf("%w (limit %s, loaded %s)", errMemoryLimit, formatBytes(b.maxMemory), formatBytes(b.memoryUsage))
+	if err := b.reserveUnsafe(rowSize); err != nil {
+		return err
 	}
 
 	// Strict mode: enforce column count
@@ -174,6 +199,38 @@ func (b *Buffer) contAppendSli(s []string, strict bool) error {
 	b.rowLen++
 
 	return nil
+}
+
+// reserveUnsafe claims rowSize bytes for a row about to be appended: from the
+// shared budget when the buffer has one, else against its own limit (0 for
+// none). Lock must be held.
+func (b *Buffer) reserveUnsafe(rowSize int64) error {
+	if b.budget != nil {
+		return b.budget.claim(rowSize)
+	}
+	if b.maxMemory > 0 && b.memoryUsage+rowSize > b.maxMemory {
+		return fmt.Errorf("%w (limit %s, loaded %s)", errMemoryLimit, formatBytes(b.maxMemory), formatBytes(b.memoryUsage))
+	}
+	return nil
+}
+
+// releaseBudget gives the buffer's share of the shared budget back, once its
+// load has stopped for good, and leaves the budget.
+func (b *Buffer) releaseBudget() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.budget != nil {
+		b.budget.used.Add(-b.memoryUsage)
+		b.budget = nil
+	}
+}
+
+// rowCount returns the number of rows (thread-safe), for readers that run
+// beside the loader.
+func (b *Buffer) rowCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.rowLen
 }
 
 // estimateRowSize estimates memory usage for a row in bytes
@@ -754,8 +811,12 @@ func isNumericValue(s string) bool {
 	return hasDigit
 }
 
-// detectAllColumnTypes automatically detects types for all columns in parallel
+// detectAllColumnTypes automatically detects types for all columns in parallel.
+// A buffer whose load was cancelled is left alone.
 func (b *Buffer) detectAllColumnTypes() {
+	if b.stopLoad.Load() {
+		return
+	}
 	b.mu.RLock()
 	colLen := b.colLen
 	b.mu.RUnlock()
@@ -779,13 +840,14 @@ func (b *Buffer) detectAllColumnTypes() {
 }
 
 // enableStringInterning analyzes columns and enables interning for low-cardinality string columns
-// This can save 30-70% memory for datasets with repeated categorical values
+// This can save 30-70% memory for datasets with repeated categorical values.
+// It walks every cell, so a buffer whose load was cancelled stops early.
 func (b *Buffer) enableStringInterning() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.rowLen < 100 {
-		return // Too small to benefit
+	if b.rowLen < 100 || b.stopLoad.Load() {
+		return // Too small to benefit, or nobody is waiting for it
 	}
 
 	// Initialize interning structures
@@ -795,7 +857,7 @@ func (b *Buffer) enableStringInterning() {
 	// Analyze each column
 	for col := 0; col < b.colLen; col++ {
 		// Skip non-string columns
-		if b.colType[col] != colTypeStr {
+		if b.colType[col] != colTypeStr || b.stopLoad.Load() {
 			continue
 		}
 

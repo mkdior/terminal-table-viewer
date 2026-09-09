@@ -451,14 +451,19 @@ func selectionChanged(row, column int) {
 	}
 }
 
-// drawFooterText rebuilds the footer (file name, status, cursor position) and
-// the filter strip above it, and records cstr as the current status message.
+// drawFooterText rebuilds the footer (file name, status, cursor position), the
+// tab line when several files are open and the filter strip, both above the
+// table, and records cstr as the current status message.
 func drawFooterText(lstr, cstr, rstr string) {
 	statusMessage = cstr
 	if mainPage == nil {
 		return
 	}
 	mainPage.Clear()
+
+	if len(tabs) > 1 {
+		mainPage.AddText(tabLine(), true, tview.AlignLeft, theme.Dim)
+	}
 
 	// Filter info strip at top when a filter is active
 	if filterInfoStr := buildFilterInfoStr(currentCursorColumn); filterInfoStr != "" {
@@ -517,9 +522,11 @@ func drawStats(s statsSummary, t *tview.Table) {
 	}
 }
 
-// draw app UI
-func drawUI(b *Buffer) error {
-
+// buildTabView creates the widgets of the table in b: the table itself, the
+// frame with the footer, and the floating preview, all in the package
+// variables (a tab parks them; buildUI puts the view on a page). The footer
+// starts with the status in statusMessage, "All Done" when there is none.
+func buildTabView() {
 	//bufferTable init with modern styling
 	bufferTable = tview.NewTable()
 	bufferTable.SetSelectable(true, true)
@@ -541,42 +548,21 @@ func drawUI(b *Buffer) error {
 	if statusMessage == "" {
 		statusMessage = "All Done"
 	}
-	fileNameStr = footerFileName()         //footer left
-	filterInfoStr := buildFilterInfoStr(0) // Top strip for filter info, initially at column 0
+	fileNameStr = footerFileName() //footer left
 
 	mainPage = tview.NewFrame(bufferTable).
 		SetBorders(0, 0, 0, 0, 0, 0)
 	mainPage.SetBackgroundColor(theme.Background)
-
-	// Add filter info strip at top if filter is active and cursor on filtered column
-	if filterInfoStr != "" {
-		mainPage.AddText(filterInfoStr, true, tview.AlignCenter, theme.Alert)
-	}
-
-	// Add main footer at bottom
-	mainPage.AddText(fileNameStr, false, tview.AlignLeft, theme.Accent).
-		AddText(statusMessage, false, tview.AlignCenter, theme.Text).
-		AddText(footerRight(cursorPosStr), false, tview.AlignRight, theme.Dim)
-
-	// Keep a handle on the screen so yanks can emit the OSC 52 clipboard escape.
-	app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
-		screenRef = screen
-		return false
-	})
-	app.SetInputCapture(handleAppKey)
-
-	//UI init - add pages to UI container
-	UI = tview.NewPages()
 	mainView = newCellPreview(mainPage)
-	UI.AddPage("main", mainView, true, true)
+
+	// The footer, with the filter strip above the table when a filter is active
+	drawFooterText(fileNameStr, statusMessage, cursorPosStr)
 
 	bufferTable.SetSelectionChangedFunc(selectionChanged)
 
 	//bufferTable HotKey Event: every key goes through the keymap
 	bufferTable.SetInputCapture(handleTableKey)
 	bufferTable.SetMouseCapture(handleTableMouse)
-
-	return nil
 }
 
 // handleTableMouse is the table's mouse capture: the wheel moves the

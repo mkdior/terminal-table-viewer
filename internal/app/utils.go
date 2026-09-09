@@ -141,6 +141,16 @@ func getHelpContent() string {
 	sb.WriteString("  A private copy of the file's previous version is kept in the backup\n")
 	sb.WriteString("  directory on every write (see --dump-config).\n\n")
 
+	sb.WriteString(head("Tabs") + "\n")
+	sb.WriteString("  ttv A.csv B.csv opens one tab per file (vim's -p is accepted too). gt\n")
+	sb.WriteString("  and gT switch, Ngt goes to tab N. The tab line above the table marks a\n")
+	sb.WriteString("  tab [+] while it has pending edits and shows how far its load is. Every\n")
+	sb.WriteString("  file loads at once within one -m budget; closing a tab stops its load\n")
+	sb.WriteString("  and frees its memory. Yanks and removals go to one register, so p\n")
+	sb.WriteString("  pastes across tabs. q closes the tab in front and quits when it is the\n")
+	sb.WriteString("  last one. Quit everything with Ctrl-C: with unwritten changes in several\n")
+	sb.WriteString("  tabs the prompt lists them, and w writes them all before quitting.\n\n")
+
 	sb.WriteString(head("Tips") + "\n")
 	sb.WriteString("  zc hides a column behind a narrow marker like a closed fold, zo shows\n")
 	sb.WriteString("  it again, za toggles, zR shows all; editing a hidden cell opens it.\n")
