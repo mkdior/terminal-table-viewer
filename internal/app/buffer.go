@@ -111,6 +111,7 @@ type Buffer struct {
 	progress     LoadProgress      // The load filling this buffer; each buffer loads on its own
 	stopLoad     atomic.Bool       // Tells the loader to stop reading: the tab was closed
 	source       os.FileInfo       // The file as it was when loaded or last written; nil for a pipe
+	stream       *rowStream        // Rows read from the file as shown, for a table too large for memory; nil when in memory
 }
 
 const (
@@ -231,6 +232,14 @@ func (b *Buffer) rowCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.rowLen
+}
+
+// colCount returns the number of columns (thread-safe): a loader widens the
+// table when a longer row arrives.
+func (b *Buffer) colCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.colLen
 }
 
 // estimateRowSize estimates memory usage for a row in bytes
@@ -582,10 +591,53 @@ func parseDate(s string) (int64, bool) {
 	return 0, false
 }
 
-// getCol returns the ith column data as a string slice
+// streamed reports whether the table is read from disk as it is shown.
+func (b *Buffer) streamed() bool {
+	if b == nil {
+		return false
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.stream != nil
+}
+
+// row returns row r of the table: from memory, or, for a streamed table,
+// read through the file's index. nil when there is no such row (yet).
+func (b *Buffer) row(r int) []string {
+	b.mu.RLock()
+	s, n := b.stream, b.rowLen
+	if s == nil {
+		defer b.mu.RUnlock()
+		if r < 0 || r >= n {
+			return nil
+		}
+		return b.cont[r]
+	}
+	b.mu.RUnlock()
+	if r < 0 || r >= n {
+		return nil
+	}
+	return s.row(r)
+}
+
+// cellAt returns the value of cell r, c and whether the cell exists.
+func (b *Buffer) cellAt(r, c int) (string, bool) {
+	row := b.row(r)
+	if c < 0 || c >= len(row) {
+		return "", false
+	}
+	return row[c], true
+}
+
+// getCol returns the ith column data as a string slice; for a streamed table
+// the first statsSampleRows of it.
 // Uses pointer receiver to avoid copying mutex
 func (b *Buffer) getCol(i int) []string {
 	b.mu.RLock()
+	if s := b.stream; s != nil {
+		b.mu.RUnlock()
+		return s.column(i, statsSampleRows)
+	}
 	defer b.mu.RUnlock()
 
 	result := make([]string, b.rowLen)
@@ -616,18 +668,18 @@ func (b *Buffer) getColType(i int) int {
 }
 
 // autoDetectColumnType intelligently detects if a column contains numeric, date, or string data
-// Returns colTypeDate for dates, colTypeFloat for numbers, colTypeStr for strings
+// Returns colTypeDate for dates, colTypeFloat for numbers, colTypeStr for strings.
+// The sample rows are read through row, so a streamed table is sampled too.
 func (b *Buffer) autoDetectColumnType(colIndex int) int {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	colLen, startRow, endRow := b.colLen, b.rowFreeze, b.rowLen
+	b.mu.RUnlock()
 
-	if colIndex < 0 || colIndex >= b.colLen {
+	if colIndex < 0 || colIndex >= colLen {
 		return colTypeStr
 	}
 
-	// Sample size for type detection
-	startRow := b.rowFreeze
-	endRow := b.rowLen
+	// Sample size for type detection: startRow..endRow are the data rows
 
 	// For large datasets, sample smartly (first N rows + some middle + last N)
 	sampleSize := 100
@@ -662,11 +714,12 @@ func (b *Buffer) autoDetectColumnType(colIndex int) int {
 	totalCount := 0
 
 	for _, rowIdx := range sampleRows {
-		if rowIdx >= b.rowLen || colIndex >= len(b.cont[rowIdx]) {
+		row := b.row(rowIdx)
+		if colIndex >= len(row) {
 			continue
 		}
 
-		value := strings.TrimSpace(b.cont[rowIdx][colIndex])
+		value := strings.TrimSpace(row[colIndex])
 
 		// Skip empty/null cells
 		if value == "" || value == "NA" || value == "N/A" || value == "NaN" || value == "null" {
@@ -846,8 +899,8 @@ func (b *Buffer) enableStringInterning() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.rowLen < 100 || b.stopLoad.Load() {
-		return // Too small to benefit, or nobody is waiting for it
+	if b.rowLen < 100 || b.stopLoad.Load() || b.stream != nil {
+		return // Too small to benefit, nobody is waiting for it, or nothing is in memory
 	}
 
 	// Initialize interning structures
@@ -935,27 +988,30 @@ func (b *Buffer) selectBySearch(s string) {
 }
 
 // cellBlock copies the rectangle of cells rows r1..r2, columns c1..c2 (both
-// inclusive, clamped to the table); missing cells in short rows are "".
+// inclusive, clamped to the table); missing cells in short rows are "". The
+// rows come through row, so a streamed table reads them block by block.
 func (b *Buffer) cellBlock(r1, c1, r2, c2 int) [][]string {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	rowLen, colLen := b.rowLen, b.colLen
+	b.mu.RUnlock()
 	if r1 > r2 {
 		r1, r2 = r2, r1
 	}
 	if c1 > c2 {
 		c1, c2 = c2, c1
 	}
-	r1, r2 = clampInt(r1, 0, b.rowLen-1), clampInt(r2, 0, b.rowLen-1)
-	c1, c2 = clampInt(c1, 0, b.colLen-1), clampInt(c2, 0, b.colLen-1)
-	if b.rowLen == 0 || b.colLen == 0 {
+	r1, r2 = clampInt(r1, 0, rowLen-1), clampInt(r2, 0, rowLen-1)
+	c1, c2 = clampInt(c1, 0, colLen-1), clampInt(c2, 0, colLen-1)
+	if rowLen == 0 || colLen == 0 {
 		return nil
 	}
 	out := make([][]string, 0, r2-r1+1)
 	for r := r1; r <= r2; r++ {
+		src := b.row(r)
 		row := make([]string, 0, c2-c1+1)
 		for c := c1; c <= c2; c++ {
-			if c < len(b.cont[r]) {
-				row = append(row, b.cont[r][c])
+			if c < len(src) {
+				row = append(row, src[c])
 			} else {
 				row = append(row, "")
 			}
@@ -1211,8 +1267,11 @@ func (b *Buffer) restoreOrder(order [][]string) {
 func (b *Buffer) setSource(info os.FileInfo) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.source = info
+	b.setSourceUnsafe(info)
 }
+
+// setSourceUnsafe is setSource with the lock held.
+func (b *Buffer) setSourceUnsafe(info os.FileInfo) { b.source = info }
 
 // sourceInfo returns the file the buffer was loaded from, nil for a pipe.
 func (b *Buffer) sourceInfo() os.FileInfo {

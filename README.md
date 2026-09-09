@@ -56,6 +56,9 @@ controls.
   previous version
 - **Tabs**: `ttv a.csv b.csv` opens one tab per file, all loading at once
   within one memory budget; `gt` and `gT` switch, `q` closes a tab
+- **Files larger than RAM**: a plain file over 1GB is streamed from disk
+  through an index of row offsets instead of being loaded, read-only, with
+  search and filters running over the file in the background
 - **Mouse support**: click to select, scroll to move, click buttons in dialogs
 - **Pipe support**: reads from stdin for use in shell pipelines
 
@@ -169,6 +172,12 @@ them.
   limit is one budget for all of them together.
 - `-p`, `--tabs`: open each file in its own tab. That is what several files
   always do; the flag is accepted for vim's `-p` habit.
+- `--stream`: read the file from disk as it is viewed instead of loading it
+  into memory; the table is read-only (see [Large Files](#large-files)).
+- `--stream-above <size>`: the file size from which plain files are streamed
+  without asking, such as `512M` or `2G`; `0` turns the automatic choice off.
+  The default is `1G`, or `stream_above` in the `[load]` section of the
+  config file.
 - `--theme <name>`: a built-in colour scheme (the list is in `--help`); the
   default is the `name` in the config file, else `subcore`.
 - `--config <path>`: the config file with key bindings and colours; the
@@ -791,11 +800,52 @@ dir     = "~/backups/ttv"
 keep    = 10
 ```
 
+### [load]
+
+- `stream_above`: the file size from which a plain file is streamed from disk
+  instead of being loaded into memory (see [Large Files](#large-files)):
+  `"1G"` by default, written as `512M`, `2G`, `1.5G` or a number of bytes;
+  `"0"` loads every file. `--stream-above` on the command line overrides it
+  for one run, `--stream` streams a file whatever its size.
+
+```toml
+[load]
+stream_above = "4G"
+```
+
 ## Large Files
 
-TTV keeps every cell in memory. A file of a few hundred MB works well; a
-multi-GB file needs several times its size in RAM and will exhaust memory
-without a limit. For very large inputs today:
+A loaded table keeps every cell in memory: a file of a few hundred MB works
+well, a multi-GB one needs several times its size in RAM. Plain files of 1GB
+or more are therefore streamed instead: `ttv big.csv` indexes the file in the
+background, recording where every 1024th row starts, and reads rows from disk
+as they come on screen, a block of 1024 at a time through a small cache. The
+table appears at once with the usual progress bar while the index builds
+(`Indexing...`), the footer marks the file `[streamed]`, and the memory used
+is a few MB whatever the file's size. `--stream` streams a smaller file too,
+`--stream-above 4G` (or `stream_above` in the `[load]` config section) moves
+the threshold, and `--stream-above 0` loads everything as before.
+
+A streamed table is read-only: editing, sorting and `W` are refused with a
+note, since they need every row in memory (load the file with
+`--stream-above 0`, or a window of it with `--skip-lines` and `-n`, to edit).
+Everything else works, with these differences:
+
+- Search and filters read the whole file again, block by block on every
+  CPU, in the background: the footer shows `Filtering... 37%` and the table
+  stays usable meanwhile; Esc cancels the pass. A filtered view is the list
+  of matching row numbers, read through the same index, and can be filtered
+  or searched again. A search keeps its first 10,000 matches.
+- Statistics (`I`) are computed over the first 100,000 rows and the title
+  says so.
+- A yank reads its rows from disk and is refused beyond 100,000 rows.
+- The column count and widths come from the first 1,000 rows; a later row
+  with more columns is cut to that count, a shorter one is padded with NaN.
+- Gzip files and pipes cannot be read at an offset, so they always load into
+  memory; `--strict` is not checked while streaming.
+- The file must not change while it is viewed: rows are read by offset.
+
+For a table that must be edited or sorted, load a part of it:
 
 - `ttv big.csv -m 2048` loads until roughly 2GB of estimated cell data and
   keeps that much viewable
@@ -803,13 +853,11 @@ without a limit. For very large inputs today:
 - `ttv big.csv --skip-lines 5000000 -n 1000000` looks at a window further in
 
 Several files open in tabs load at the same time, so their sizes add up:
-`ttv a.csv b.csv -m 4096` holds all of them to roughly 4GB together, and a
-tab closed with `q` while its file is still loading stops reading and frees
-what it held. Gzip files decompress as they load, one CPU each, and show a row
-counter rather than a percentage because their uncompressed size is unknown.
-
-A streaming design that indexes row offsets on disk and loads only the visible
-window is the planned next step and would lift this limit.
+`ttv a.csv b.csv -m 4096` holds all of them to roughly 4GB together (streamed
+tabs take nothing from that budget), and a tab closed with `q` while its file
+is still loading or indexing stops reading and frees what it held. Gzip files
+decompress as they load, one CPU each, and show a row counter rather than a
+percentage because their uncompressed size is unknown.
 
 ## Development
 

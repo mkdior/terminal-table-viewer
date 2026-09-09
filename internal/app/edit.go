@@ -116,8 +116,13 @@ func baseBuffer() *Buffer {
 func loading() bool { return !baseBuffer().progress.IsComplete.Load() }
 
 // editsAllowed reports whether the table may be changed now and says why not
-// in the footer otherwise.
+// in the footer otherwise: a streamed table is read-only (its rows are not in
+// memory to change), and a loading one is not settled yet.
 func editsAllowed() bool {
+	if baseBuffer().streamed() {
+		drawFooterText(fileNameStr, "Read-only: "+filepath.Base(args.FileName)+" is streamed from disk; load it into memory to edit (see --stream-above)", cursorPosStr)
+		return false
+	}
 	if loading() {
 		drawFooterText(fileNameStr, "Still loading; wait before editing", cursorPosStr)
 		return false
@@ -184,11 +189,14 @@ func editSummary() string {
 }
 
 // footerFileName is the footer's left text: the file name, [+] while edits
-// are pending, and the help hint.
+// are pending or [streamed] for a table read from disk, and the help hint.
 func footerFileName() string {
 	name := filepath.Base(args.FileName)
-	if dirty() {
+	switch {
+	case dirty():
 		name += " [+]"
+	case baseBuffer().streamed():
+		name += " [streamed]"
 	}
 	return name + "  |  ? help"
 }

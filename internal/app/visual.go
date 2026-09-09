@@ -62,7 +62,7 @@ func visualRect() (r1, c1, r2, c2 int) {
 		r1, r2 = r2, r1
 	}
 	if visual == visualRows {
-		return r1, 0, r2, b.colLen - 1
+		return r1, 0, r2, b.colCount() - 1
 	}
 	c1, c2 = visualAnchorCol, col
 	if c1 > c2 {
@@ -93,7 +93,7 @@ func visualStatus() string {
 func yankVisual(wholeRows bool) {
 	r1, c1, r2, c2 := visualRect()
 	if wholeRows {
-		c1, c2 = 0, b.colLen-1
+		c1, c2 = 0, b.colCount()-1
 	}
 	visual = visualOff
 	yankCells(r1, c1, r2, c2)

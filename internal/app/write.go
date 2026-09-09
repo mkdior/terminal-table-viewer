@@ -71,6 +71,8 @@ func writeBlocker() string {
 	switch {
 	case args.FileName == pipeSourceName:
 		return "the input came from a pipe; there is no file to write"
+	case baseBuffer().streamed():
+		return "the file is streamed from disk and read-only"
 	case loading():
 		return "still loading"
 	case loadStopped:

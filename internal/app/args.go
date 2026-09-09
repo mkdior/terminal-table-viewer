@@ -2,21 +2,23 @@ package app
 
 // Args struct
 type Args struct {
-	FileName   string
-	Sep        string
-	SkipSymbol []string //ignore line with specified prefix
-	SkipNum    int      //Number of lines that should be skipped
-	ShowNum    []int    //columns that should be displayed
-	HideNum    []int    //columns that should be hidden
-	Header     int      //header display mode
-	NLine      int      //number of lines that should be displayed
-	Strict     bool     // check for missing data
-	AsyncLoad  bool     // enable async loading for progressive rendering
-	MemoryMB   int      // Memory limit in MB (0 = unlimited/default, >0 = custom limit)
-	Theme      string   // name of the colour scheme (see builtinThemes)
-	ConfigPath string   // config file; empty means the default location
-	DumpConfig bool     // print the default config and exit
-	Tabs       bool     // -p: several files always open in tabs; the flag is vim's spelling of it
+	FileName    string
+	Sep         string
+	SkipSymbol  []string //ignore line with specified prefix
+	SkipNum     int      //Number of lines that should be skipped
+	ShowNum     []int    //columns that should be displayed
+	HideNum     []int    //columns that should be hidden
+	Header      int      //header display mode
+	NLine       int      //number of lines that should be displayed
+	Strict      bool     // check for missing data
+	AsyncLoad   bool     // enable async loading for progressive rendering
+	MemoryMB    int      // Memory limit in MB (0 = unlimited/default, >0 = custom limit)
+	Theme       string   // name of the colour scheme (see builtinThemes)
+	ConfigPath  string   // config file; empty means the default location
+	DumpConfig  bool     // print the default config and exit
+	Tabs        bool     // -p: several files always open in tabs; the flag is vim's spelling of it
+	Stream      bool     // read plain files from disk as they are shown instead of loading them
+	StreamAbove string   // file size from which plain files are streamed; empty leaves the config's value
 }
 
 func (args *Args) setDefault() {
@@ -34,4 +36,6 @@ func (args *Args) setDefault() {
 	args.ConfigPath = ""
 	args.DumpConfig = false
 	args.Tabs = false
+	args.Stream = false
+	args.StreamAbove = ""
 }

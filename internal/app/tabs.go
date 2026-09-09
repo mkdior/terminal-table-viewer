@@ -262,6 +262,9 @@ func (t *tab) release() {
 	t.released = true
 	large := t.base.getMemoryUsage() >= releaseThreshold
 	t.base.releaseBudget()
+	if s := t.base.stream; s != nil {
+		s.close()
+	}
 	if large {
 		go rtdebug.FreeOSMemory()
 	}
@@ -322,12 +325,16 @@ func emptyReason(buf *Buffer) error {
 func openTab(name string, pipe io.Reader, sep rune) (*tab, error) {
 	t := newTab(name, sep)
 	buf := t.base
+	stream := shouldStream(name, pipe)
 	var loadErr error // a memory-limit stop; other errors return at once
 	if args.AsyncLoad {
 		loader := func(b *Buffer, updateChan chan<- bool, doneChan chan<- error) {
-			if pipe != nil {
+			switch {
+			case pipe != nil:
 				go loadPipeToBufferAsync(pipe, b, updateChan, doneChan)
-			} else {
+			case stream:
+				go loadStreamAsync(name, b, updateChan, doneChan)
+			default:
 				go loadFileToBufferAsync(name, b, updateChan, doneChan)
 			}
 		}
@@ -347,9 +354,12 @@ func openTab(name string, pipe io.Reader, sep rune) (*tab, error) {
 			}
 		}
 	} else {
-		if pipe != nil {
+		switch {
+		case pipe != nil:
 			loadErr = loadPipeToBuffer(pipe, buf)
-		} else {
+		case stream:
+			loadErr = loadStream(name, buf)
+		default:
 			loadErr = loadFileToBuffer(name, buf)
 		}
 		if loadErr != nil && !errors.Is(loadErr, errMemoryLimit) {
@@ -484,10 +494,14 @@ func (t *tab) loadTick() {
 		}
 	}
 	base := baseBuffer()
+	verb := "Loading"
+	if base.streamed() {
+		verb = "Indexing"
+	}
 	if base.progress.TotalBytes.Load() > 0 {
-		updateFooterWithStatus(fmt.Sprintf("Loading... %s", makeProgressBar(base.progress.GetPercentage(), 15)))
+		updateFooterWithStatus(fmt.Sprintf("%s... %s", verb, makeProgressBar(base.progress.GetPercentage(), 15)))
 	} else {
-		updateFooterWithStatus("Loading... " + strconv.Itoa(base.rowCount()) + " rows")
+		updateFooterWithStatus(verb + "... " + strconv.Itoa(base.rowCount()) + " rows")
 	}
 }
 
@@ -503,6 +517,9 @@ func (t *tab) loadFinished(err error) {
 	withTab(t, func() {
 		rows := strconv.Itoa(baseBuffer().rowCount())
 		status := "Loaded " + rows + " rows"
+		if baseBuffer().streamed() {
+			status = "Indexed " + rows + " rows; streamed from disk, read-only"
+		}
 		if err != nil {
 			status = "Stopped after " + rows + " rows: " + err.Error()
 		}

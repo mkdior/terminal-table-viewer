@@ -250,13 +250,19 @@ func tsv(rows [][]string) string {
 // still running the footer says so, then names the channels that took the
 // text.
 func yankCells(r1, c1, r2, c2 int) {
+	if n := max(r1, r2) - min(r1, r2) + 1; n > maxStreamYankRows && b.streamed() {
+		// Every row would be read from disk and held; a yank that size belongs
+		// to a shell tool.
+		drawFooterText(fileNameStr, fmt.Sprintf("Yank of %d rows refused: a streamed table yanks at most %d rows at a time", n, maxStreamYankRows), cursorPosStr)
+		return
+	}
 	rows := b.cellBlock(r1, c1, r2, c2)
 	setRegister(rows)
 	text := tsv(rows)
 	what := fmt.Sprintf("%d rows x %d columns", len(rows), c2-c1+1)
 	if len(rows) == 1 && c1 == c2 {
 		what = "1 cell"
-	} else if c1 == 0 && c2 == b.colLen-1 {
+	} else if c1 == 0 && c2 == b.colCount()-1 {
 		what = fmt.Sprintf("%d rows", len(rows))
 	}
 	yanked := fmt.Sprintf("Yanked %s (%s)", what, formatBytes(int64(len(text))))

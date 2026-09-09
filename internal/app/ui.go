@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,8 +32,10 @@ func buildFilterInfoStr(currentColumn int) string {
 	if opts, hasFilter := activeFilters[currentColumn]; hasFilter {
 		// Get column name if available
 		columnName := fmt.Sprintf("Column %d", currentColumn)
-		if b.rowFreeze > 0 && len(b.cont) > 0 && currentColumn < len(b.cont[0]) {
-			columnName = b.cont[0][currentColumn]
+		if b.rowFreeze > 0 {
+			if name, ok := b.cellAt(0, currentColumn); ok {
+				columnName = name
+			}
 		}
 
 		return fmt.Sprintf("Filter Active: [%s] %s  |  %d filters total  |  Press 'r' to remove this filter", columnName, describeFilter(opts), len(activeFilters))
@@ -50,26 +53,82 @@ func describeFilter(opts FilterOptions) string {
 	return fmt.Sprintf("%s %q", opts.Operator, opts.Query)
 }
 
-// applyActiveFilters runs every active filter over base: the value filters
-// first, in column order, then the unique filters, so duplicates are removed
-// from the rows that match rather than before matching.
-func applyActiveFilters(base *Buffer) *Buffer {
-	cols := make([]int, 0, len(activeFilters))
-	for c := range activeFilters {
+// filterOrder lists the filtered columns in the order the filters apply: the
+// value filters first, in column order, then the unique filters, so
+// duplicates are removed from the rows that match rather than before matching.
+func filterOrder(filters map[int]FilterOptions) []int {
+	cols := make([]int, 0, len(filters))
+	for c := range filters {
 		cols = append(cols, c)
 	}
 	sort.Slice(cols, func(i, j int) bool {
-		ui, uj := isUniqueOperator(activeFilters[cols[i]].Operator), isUniqueOperator(activeFilters[cols[j]].Operator)
+		ui, uj := isUniqueOperator(filters[cols[i]].Operator), isUniqueOperator(filters[cols[j]].Operator)
 		if ui != uj {
 			return !ui
 		}
 		return cols[i] < cols[j]
 	})
+	return cols
+}
+
+// applyActiveFilters runs every active filter over base in filterOrder.
+func applyActiveFilters(base *Buffer) *Buffer {
 	out := base
-	for _, c := range cols {
+	for _, c := range filterOrder(activeFilters) {
 		out = out.filterByColumn(c, activeFilters[c])
 	}
 	return out
+}
+
+// deriveFilteredView applies the active filters to the unfiltered table and
+// hands the view to then: at once for a table in memory, or, for a streamed
+// file, after a background pass over it with its progress in the footer and
+// Esc to cancel, in which case cancelled runs instead.
+func deriveFilteredView(then func(view *Buffer), cancelled func()) {
+	base := baseBuffer()
+	if !base.streamed() {
+		drawFooterText(fileNameStr, "Filtering...", cursorPosStr)
+		if app != nil {
+			app.ForceDraw()
+		}
+		then(applyActiveFilters(base))
+		return
+	}
+	cols, filters := filterOrder(activeFilters), maps.Clone(activeFilters)
+	runPass("Filtering", func(p *pass) *Buffer { return filterStream(base, cols, filters, p) }, then, cancelled)
+}
+
+// searchTable finds the cells of buf matching the query and hands them to
+// then: at once for a table in memory, or after a background pass over a
+// streamed file.
+func searchTable(buf *Buffer, query string, useRegex, caseSensitive bool, then func([]SearchResult)) {
+	if !buf.streamed() {
+		then(performSearch(buf, query, useRegex, caseSensitive))
+		return
+	}
+	runPass("Searching", func(p *pass) []SearchResult { return searchStream(buf, query, useRegex, caseSensitive, p) }, then, nil)
+}
+
+// reapplyFilters re-derives the view after a filter was removed: the
+// unfiltered table comes back when none is left, with cleared in the footer,
+// else the remaining filters apply and removed says how many rows match. The
+// cursor goes to row (clamped) in column. A cancelled pass on a streamed file
+// puts the removed filter back.
+func reapplyFilters(row, column int, cleared string, removed func(matches int) string, was FilterOptions) {
+	if len(activeFilters) == 0 {
+		b = originalBuffer
+		isFiltered = false
+		drawBuffer(b, bufferTable)
+		bufferTable.Select(clampRow(row, b), column)
+		drawFooterText(fileNameStr, cleared, cursorPosStr)
+		return
+	}
+	deriveFilteredView(func(view *Buffer) {
+		b = view
+		drawBuffer(b, bufferTable)
+		bufferTable.Select(clampRow(row, b), column)
+		drawFooterText(fileNameStr, removed(b.rowLen-b.rowFreeze), cursorPosStr)
+	}, func() { activeFilters[column] = was })
 }
 
 // searchMatchSet mirrors searchResults as a set so cell styling is O(1) per cell.
@@ -144,17 +203,20 @@ func (c *bufferContent) GetCell(r, col int) *tview.TableCell {
 func (c *bufferContent) buildCell(r, col int) *tview.TableCell {
 	b := c.b
 	b.mu.RLock()
-	if r < 0 || col < 0 || r >= b.rowLen || col >= b.colLen || col >= len(b.cont[r]) {
+	if r < 0 || col < 0 || r >= b.rowLen || col >= b.colLen {
 		b.mu.RUnlock()
 		return nil
 	}
-	cellText := b.cont[r][col]
 	rowFreeze, colFreeze := b.rowFreeze, b.colFreeze
 	colWidth := 0
 	if col < len(b.colWidth) {
 		colWidth = b.colWidth[col]
 	}
 	b.mu.RUnlock()
+	cellText, ok := b.cellAt(r, col)
+	if !ok {
+		return nil
+	}
 
 	color := theme.Text
 	backgroundColor := theme.Background
@@ -281,14 +343,14 @@ func pinColumnOffset(tw int) {
 	if bufferTable == nil || b == nil {
 		return
 	}
-	fixed := b.colFreeze
+	fixed, cols := b.colFreeze, b.colCount()
 	_, sel := bufferTable.GetSelection()
-	if tw <= 0 || sel < fixed || sel >= b.colLen {
+	if tw <= 0 || sel < fixed || sel >= cols {
 		return
 	}
 	rowOff, colOff := bufferTable.GetOffset()
 	fixedWidth := 0
-	for c := 0; c < fixed && c < b.colLen; c++ {
+	for c := 0; c < fixed && c < cols; c++ {
 		fixedWidth += displayColumnWidth(c) + 1
 	}
 	// includes reports whether column sel is shown in full when the columns
@@ -324,15 +386,16 @@ func pinColumnOffset(tw int) {
 }
 
 // firstDataRow returns the first selectable row of b: the row after the
-// frozen header, or 0 when no header is frozen.
+// frozen header, or 0 when no header is frozen. The row count is read under
+// the lock: a loader may be appending rows meanwhile.
 func firstDataRow(b *Buffer) int {
-	return clampInt(b.rowFreeze, 0, b.rowLen-1)
+	return clampInt(b.rowFreeze, 0, b.rowCount()-1)
 }
 
 // clampRow keeps a target row within the selectable data rows of b, so any
 // motion or count that overshoots lands on the first or last data row.
 func clampRow(row int, b *Buffer) int {
-	return clampInt(row, firstDataRow(b), b.rowLen-1)
+	return clampInt(row, firstDataRow(b), b.rowCount()-1)
 }
 
 // padToWidth pads text with spaces to width display cells, centred for
@@ -584,7 +647,7 @@ func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.
 		}
 	case tview.MouseScrollDown:
 		row, col := bufferTable.GetSelection()
-		if row < b.rowLen-1 {
+		if row < b.rowCount()-1 {
 			bufferTable.Select(row+1, col)
 		}
 	}
@@ -593,6 +656,9 @@ func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.
 
 // openSearchDialog shows the search form and runs the search on Enter.
 func openSearchDialog() {
+	if passRunning() {
+		return
+	}
 	// Create search form
 	form := tview.NewForm()
 	form.AddInputField("Search:", "", 40, nil, nil)
@@ -606,11 +672,20 @@ func openSearchDialog() {
 		query := form.GetFormItem(0).(*tview.InputField).GetText()
 		useRegex := form.GetFormItem(1).(*tview.Checkbox).IsChecked()
 		caseSensitive := form.GetFormItem(2).(*tview.Checkbox).IsChecked()
-		if query != "" {
+		UI.HidePage("searchModal")
+		app.SetFocus(bufferTable)
+		if query == "" {
+			return
+		}
+		searchUseRegex = useRegex
+		searched := b
+		searchTable(searched, query, useRegex, caseSensitive, func(results []SearchResult) {
+			if b != searched {
+				drawFooterText(fileNameStr, "The table changed during the search; search again", cursorPosStr)
+				return
+			}
 			searchQuery = query
-			searchUseRegex = useRegex
-			setSearchResults(performSearch(b, query, useRegex, caseSensitive))
-
+			setSearchResults(results)
 			if len(searchResults) > 0 {
 				currentSearchIndex = 0
 				bufferTable.Select(searchResults[0].Row, searchResults[0].Col)
@@ -619,9 +694,11 @@ func openSearchDialog() {
 				if useRegex {
 					searchMode = "regex matches"
 				}
-				drawFooterText(fileNameStr,
-					fmt.Sprintf("Found %d %s (1/%d)", len(searchResults), searchMode, len(searchResults)),
-					cursorPosStr)
+				found := fmt.Sprintf("Found %d %s (1/%d)", len(searchResults), searchMode, len(searchResults))
+				if b.streamed() && len(searchResults) == maxStreamMatches {
+					found = fmt.Sprintf("Found the first %d %s (1/%d)", len(searchResults), searchMode, len(searchResults))
+				}
+				drawFooterText(fileNameStr, found, cursorPosStr)
 			} else {
 				currentSearchIndex = -1
 				if useRegex {
@@ -630,9 +707,7 @@ func openSearchDialog() {
 					drawFooterText(fileNameStr, "No matches found", cursorPosStr)
 				}
 			}
-		}
-		UI.HidePage("searchModal")
-		app.SetFocus(bufferTable)
+		})
 	}
 	form.AddButton("Search", executeSearch)
 	form.AddButton("Cancel", func() {
@@ -683,6 +758,9 @@ func openSearchDialog() {
 
 // openFilterDialog shows the filter form for the selected column.
 func openFilterDialog() {
+	if passRunning() {
+		return
+	}
 	_, column := bufferTable.GetSelection()
 
 	// Create filter form
@@ -718,13 +796,13 @@ func openFilterDialog() {
 	applyFilter := func() {
 		query = filterForm.GetFormItem(1).(*tview.InputField).GetText()
 		operator := operators[selectedOperatorIndex]
+		UI.HidePage("filterModal")
+		app.SetFocus(bufferTable)
 
 		// Unique filters need no value; for the others an empty value removes the filter.
 		if query != "" || isUniqueOperator(operator) {
-			drawFooterText(fileNameStr, "Filtering...", cursorPosStr)
-			app.ForceDraw()
-
 			// Add or update filter for this column
+			was, had := activeFilters[column]
 			activeFilters[column] = FilterOptions{
 				Query:         query,
 				Operator:      operator,
@@ -736,52 +814,39 @@ func openFilterDialog() {
 				originalBuffer = b // Save original buffer first time
 			}
 
-			filteredBuffer := applyActiveFilters(originalBuffer)
-
-			// Update display with filtered data
-			if filteredBuffer.rowLen <= filteredBuffer.rowFreeze {
-				drawFooterText(fileNameStr, "No rows match filters", cursorPosStr)
-				// Remove this filter since it results in no data
-				delete(activeFilters, column)
-			} else {
-				// Replace current buffer with filtered buffer
-				b = filteredBuffer
-				isFiltered = true
-
-				drawBuffer(b, bufferTable)
-				bufferTable.Select(firstDataRow(b), column) // Stay at same column, go to first data row
-				matchCount := b.rowLen - b.rowFreeze
-				drawFooterText(fileNameStr,
-					fmt.Sprintf("Filtered: %d rows match (%d filters active, r to reset)", matchCount, len(activeFilters)),
-					cursorPosStr)
-			}
-		} else {
-			// Empty query means remove filter for this column
-			if _, exists := activeFilters[column]; exists {
-				delete(activeFilters, column)
-
-				// Reapply remaining filters
-				if len(activeFilters) == 0 {
-					// No more filters, restore original
-					b = originalBuffer
-					isFiltered = false
-					drawBuffer(b, bufferTable)
-					bufferTable.Select(firstDataRow(b), column) // Stay at same column
-					drawFooterText(fileNameStr, "All filters cleared - showing all rows", cursorPosStr)
+			deriveFilteredView(func(filteredBuffer *Buffer) {
+				// Update display with filtered data
+				if filteredBuffer.rowLen <= filteredBuffer.rowFreeze {
+					drawFooterText(fileNameStr, "No rows match filters", cursorPosStr)
+					// Remove this filter since it results in no data
+					delete(activeFilters, column)
 				} else {
-					// Apply remaining filters
-					b = applyActiveFilters(originalBuffer)
+					// Replace current buffer with filtered buffer
+					b = filteredBuffer
+					isFiltered = true
+
 					drawBuffer(b, bufferTable)
-					bufferTable.Select(firstDataRow(b), column) // Stay at same column
+					bufferTable.Select(firstDataRow(b), column) // Stay at same column, go to first data row
 					matchCount := b.rowLen - b.rowFreeze
 					drawFooterText(fileNameStr,
-						fmt.Sprintf("Filter removed: %d rows match (%d filters active)", matchCount, len(activeFilters)),
+						fmt.Sprintf("Filtered: %d rows match (%d filters active, r to reset)", matchCount, len(activeFilters)),
 						cursorPosStr)
 				}
-			}
+			}, func() {
+				// The pass was cancelled: the filter is as it was before.
+				if had {
+					activeFilters[column] = was
+				} else {
+					delete(activeFilters, column)
+				}
+			})
+		} else if was, exists := activeFilters[column]; exists {
+			// Empty query means remove filter for this column
+			delete(activeFilters, column)
+			reapplyFilters(0, column, "All filters cleared - showing all rows", func(matches int) string {
+				return fmt.Sprintf("Filter removed: %d rows match (%d filters active)", matches, len(activeFilters))
+			}, was)
 		}
-		UI.HidePage("filterModal")
-		app.SetFocus(bufferTable)
 	}
 
 	filterForm.AddButton("Filter", applyFilter)
@@ -850,28 +915,15 @@ func removeCurrentFilter() {
 		row, column := bufferTable.GetSelection()
 
 		// Check if current column has a filter
-		if _, hasFilter := activeFilters[column]; hasFilter {
-			// Remove filter for this column
-			delete(activeFilters, column)
-
-			// Reapply remaining filters
-			if len(activeFilters) == 0 {
-				// No more filters, restore original
-				b = originalBuffer
-				isFiltered = false
-				drawBuffer(b, bufferTable)
-				bufferTable.Select(row, column)
-				drawFooterText(fileNameStr, "All filters cleared - showing all rows", cursorPosStr)
-			} else {
-				// Apply remaining filters
-				b = applyActiveFilters(originalBuffer)
-				drawBuffer(b, bufferTable)
-				bufferTable.Select(row, column)
-				matchCount := b.rowLen - b.rowFreeze
-				drawFooterText(fileNameStr,
-					fmt.Sprintf("Filter removed from current column: %d rows match (%d filters active)", matchCount, len(activeFilters)),
-					cursorPosStr)
+		if was, hasFilter := activeFilters[column]; hasFilter {
+			if passRunning() {
+				return
 			}
+			// Remove filter for this column and reapply the remaining ones
+			delete(activeFilters, column)
+			reapplyFilters(row, column, "All filters cleared - showing all rows", func(matches int) string {
+				return fmt.Sprintf("Filter removed from current column: %d rows match (%d filters active)", matches, len(activeFilters))
+			}, was)
 		} else if len(activeFilters) > 0 {
 			// Current column doesn't have a filter, but others do
 			drawFooterText(fileNameStr, "Current column has no filter - navigate to filtered column to remove", cursorPosStr)
@@ -894,9 +946,16 @@ func showCurrentColumnStats() {
 	columnName := "Column " + I2S(column)
 
 	// Get column name from header if available
-	if currentBuffer.rowFreeze > 0 && len(currentBuffer.cont) > 0 && column < len(currentBuffer.cont[0]) {
-		columnName = currentBuffer.cont[0][column]
+	if currentBuffer.rowFreeze > 0 && len(summaryArray) > 0 {
+		if name, ok := currentBuffer.cellAt(0, column); ok {
+			columnName = name
+		}
 		summaryArray = summaryArray[1:]
+	}
+	// A streamed table is sampled: reading every row would take as long as a
+	// pass and hold every value in memory.
+	if currentBuffer.streamed() && currentBuffer.rowCount() > statsSampleRows {
+		columnName += fmt.Sprintf(" (first %d rows)", statsSampleRows)
 	}
 
 	// Determine statistics type

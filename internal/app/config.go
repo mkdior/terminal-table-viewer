@@ -29,6 +29,12 @@ type Config struct {
 	Clipboard ClipboardConfig    `toml:"clipboard"`
 	Preview   PreviewConfig      `toml:"preview"`
 	Backup    BackupConfig       `toml:"backup"`
+	Load      LoadConfig         `toml:"load"`
+}
+
+// LoadConfig controls how files are read.
+type LoadConfig struct {
+	StreamAbove string `toml:"stream_above"` // stream plain files from this size on ("1G" by default; 0 loads every file)
 }
 
 // MovementConfig tunes how the cursor moves.
@@ -200,6 +206,14 @@ func applyConfig(cfg Config, themeFlag string) error {
 		}
 		backupKeep = *cfg.Backup.Keep
 	}
+	streamAbove = defaultStreamAbove
+	if s := strings.TrimSpace(cfg.Load.StreamAbove); s != "" {
+		n, err := parseSize(s)
+		if err != nil {
+			return fmt.Errorf("config: load: stream_above: %w", err)
+		}
+		streamAbove = n
+	}
 	return nil
 }
 
@@ -295,6 +309,11 @@ func dumpConfig(w io.Writer) error {
 	sb.WriteString("enabled = true\n")
 	sb.WriteString("dir     = \"\"\n")
 	fmt.Fprintf(&sb, "keep    = %d\n", defaultBackupKeep)
+	sb.WriteString("\n# Load: a plain file of stream_above bytes or more (512M, 2G, ...) is streamed\n")
+	sb.WriteString("# from disk as it is viewed, read-only, instead of being loaded into memory;\n")
+	sb.WriteString("# 0 loads every file. --stream streams a file whatever its size.\n\n")
+	sb.WriteString("[load]\n")
+	sb.WriteString("stream_above = \"1G\"\n")
 	_, err := io.WriteString(w, sb.String())
 	return err
 }

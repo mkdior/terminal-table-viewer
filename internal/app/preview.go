@@ -205,13 +205,8 @@ func truncatedCellText(row, col int) (string, bool) {
 	if !limited {
 		return "", false
 	}
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if row < 0 || row >= b.rowLen || col < 0 || col >= len(b.cont[row]) {
-		return "", false
-	}
-	text := b.cont[row][col]
-	if uniseg.StringWidth(text) <= width {
+	text, ok := b.cellAt(row, col)
+	if !ok || uniseg.StringWidth(text) <= width {
 		return "", false
 	}
 	return text, true
@@ -219,10 +214,10 @@ func truncatedCellText(row, col int) (string, bool) {
 
 // columnTitle names a column by its header cell, or by its index without one.
 func columnTitle(col int) string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if b.rowFreeze > 0 && b.rowLen > 0 && col < len(b.cont[0]) {
-		return b.cont[0][col]
+	if b.rowFreeze > 0 {
+		if name, ok := b.cellAt(0, col); ok {
+			return name
+		}
 	}
 	return "Column " + I2S(col)
 }
@@ -250,12 +245,14 @@ func updateCellPreview(row, col int) {
 // hiddenCellText returns the value of a data cell in a hidden column for the
 // preview, "(empty)" for a blank one so the box still names the column.
 func hiddenCellText(row, col int) (string, bool) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	if row < b.rowFreeze || row >= b.rowLen || col < 0 || col >= len(b.cont[row]) {
+	if row < b.rowFreeze {
 		return "", false
 	}
-	if text := b.cont[row][col]; text != "" {
+	text, ok := b.cellAt(row, col)
+	if !ok {
+		return "", false
+	}
+	if text != "" {
 		return text, true
 	}
 	return "(empty)", true

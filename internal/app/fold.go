@@ -20,7 +20,7 @@ var hiddenCols = map[int]bool{}
 // foldColumns hides columns c1..c2 of the table; at least one column always
 // stays visible.
 func foldColumns(c1, c2 int) {
-	c1, c2 = orderRange(c1, c2, 0, b.colLen-1)
+	c1, c2 = orderRange(c1, c2, 0, b.colCount()-1)
 	hiding := 0
 	for c := c1; c <= c2; c++ {
 		if !hiddenCols[c] {
@@ -31,7 +31,7 @@ func foldColumns(c1, c2 int) {
 		drawFooterText(fileNameStr, "Already hidden", cursorPosStr)
 		return
 	}
-	if len(hiddenCols)+hiding >= b.colLen {
+	if len(hiddenCols)+hiding >= b.colCount() {
 		drawFooterText(fileNameStr, "Cannot hide every column", cursorPosStr)
 		return
 	}
@@ -48,7 +48,7 @@ func foldColumns(c1, c2 int) {
 
 // unfoldColumns shows columns c1..c2 again.
 func unfoldColumns(c1, c2 int) {
-	c1, c2 = orderRange(c1, c2, 0, b.colLen-1)
+	c1, c2 = orderRange(c1, c2, 0, b.colCount()-1)
 	var names []string
 	for c := c1; c <= c2; c++ {
 		if hiddenCols[c] {
@@ -67,7 +67,7 @@ func unfoldColumns(c1, c2 int) {
 // toggleFold hides the column under the cursor, or shows it when hidden. On
 // a selection it hides when any selected column is visible.
 func toggleFold(c1, c2 int) {
-	c1, c2 = orderRange(c1, c2, 0, b.colLen-1)
+	c1, c2 = orderRange(c1, c2, 0, b.colCount()-1)
 	for c := c1; c <= c2; c++ {
 		if !hiddenCols[c] {
 			foldColumns(c1, c2)

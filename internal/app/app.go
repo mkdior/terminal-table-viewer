@@ -116,6 +116,14 @@ func Execute(version string) {
 				stopView()
 				fatalError(err)
 			}
+			if args.StreamAbove != "" {
+				n, err := parseSize(args.StreamAbove)
+				if err != nil {
+					stopView()
+					fatalError(fmt.Errorf("--stream-above: %w", err))
+				}
+				streamAbove = n
+			}
 
 			// The memory limit is one budget for every open file (unlimited by default).
 			if args.MemoryMB > 0 {
@@ -165,6 +173,8 @@ func Execute(version string) {
 	RootCmd.Flags().BoolVar(&args.AsyncLoad, "async", true, "Progressive rendering while loading")
 	RootCmd.Flags().IntVarP(&args.MemoryMB, "memory", "m", 0, "Memory limit in MB for all open files together (0=unlimited/default, >0=set limit)")
 	RootCmd.Flags().BoolVarP(&args.Tabs, "tabs", "p", false, "Open each file in its own tab (always the case with several files; accepted for vim's -p)")
+	RootCmd.Flags().BoolVar(&args.Stream, "stream", false, "Read the file from disk as it is viewed instead of loading it into memory (read-only)")
+	RootCmd.Flags().StringVar(&args.StreamAbove, "stream-above", "", "File size from which plain files are streamed, e.g. 512M or 2G; 0 turns it off (default 1G, or stream_above in the config)")
 	RootCmd.Flags().StringVar(&args.Theme, "theme", "", "Colour scheme: "+strings.Join(themeNames(), ", ")+" (default from config, else "+defaultThemeName+")")
 	RootCmd.Flags().StringVar(&args.ConfigPath, "config", "", "Config file (default ~/.config/ttv/config.toml)")
 	RootCmd.Flags().BoolVar(&args.DumpConfig, "dump-config", false, "Print the default config file and exit")

@@ -156,7 +156,11 @@ func getHelpContent() string {
 	sb.WriteString("  it again, za toggles, zR shows all; editing a hidden cell opens it.\n")
 	sb.WriteString("  Long cells are cut at 50 characters; a cut cell shows its full value\n")
 	sb.WriteString("  in a floating box while selected. Keys can be changed in the config\n")
-	sb.WriteString("  file; see ttv --dump-config for the defaults.\n\n")
+	sb.WriteString("  file; see ttv --dump-config for the defaults.\n")
+	sb.WriteString("  A plain file of 1GB or more (--stream-above, or --stream for any file)\n")
+	sb.WriteString("  is streamed from disk instead of loaded: the footer says [streamed],\n")
+	sb.WriteString("  the table is read-only, search and filters run over the file in the\n")
+	sb.WriteString("  background (Esc cancels), and statistics use the first 100000 rows.\n\n")
 	sb.WriteString(rule + "\n")
 	return sb.String()
 }
@@ -257,37 +261,28 @@ func getColumnMaxWidth(colIndex int) int {
 // Analyzes first N rows to detect if columns have text longer than threshold
 func detectAndWrapLongColumns(b *Buffer, sampleSize int, threshold int) {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	rowLen, colLen, startRow := b.rowLen, b.colLen, b.rowFreeze // the header row is not sampled
+	b.mu.RUnlock()
 
 	// Determine how many rows to sample
-	maxSample := sampleSize
-	if b.rowLen < maxSample {
-		maxSample = b.rowLen
-	}
-
-	// Skip header row in analysis if it exists
-	startRow := 0
-	if b.rowFreeze > 0 {
-		startRow = b.rowFreeze
-	}
+	maxSample := min(sampleSize, rowLen)
 
 	// Track maximum length found in each column
-	maxLengths := make([]int, b.colLen)
+	maxLengths := make([]int, colLen)
 
-	// Sample rows to find maximum content length per column
+	// Sample rows to find maximum content length per column (through row, so
+	// a streamed table is sampled too)
 	for r := startRow; r < maxSample; r++ {
-		for c := 0; c < b.colLen; c++ {
-			if c < len(b.cont[r]) {
-				cellLen := len(b.cont[r][c])
-				if cellLen > maxLengths[c] {
-					maxLengths[c] = cellLen
-				}
+		row := b.row(r)
+		for c := 0; c < colLen && c < len(row); c++ {
+			if cellLen := len(row[c]); cellLen > maxLengths[c] {
+				maxLengths[c] = cellLen
 			}
 		}
 	}
 
 	// Enable wrapping for columns that exceed threshold
-	for c := 0; c < b.colLen; c++ {
+	for c := 0; c < colLen; c++ {
 		if maxLengths[c] > threshold {
 			// Only set if not already manually configured
 			if _, exists := wrappedColumns[c]; !exists {
@@ -303,19 +298,9 @@ func performSearch(b *Buffer, query string, useRegex bool, caseSensitive bool) [
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Compile regex if in regex mode
-	var re *regexp.Regexp
-	var err error
-	if useRegex {
-		if !caseSensitive {
-			query = "(?i)" + query
-		}
-		re, err = regexp.Compile(query)
-		if err != nil {
-			return []SearchResult{}
-		}
-	} else if !caseSensitive {
-		query = strings.ToLower(query)
+	match, ok := searchMatcher(query, useRegex, caseSensitive)
+	if !ok {
+		return []SearchResult{}
 	}
 
 	// Parallel search across columns for better performance
@@ -329,20 +314,7 @@ func performSearch(b *Buffer, query string, useRegex bool, caseSensitive bool) [
 			var colResults []SearchResult
 
 			for r := 0; r < b.rowLen; r++ {
-				cellText := b.cont[r][col]
-
-				var matches bool
-				if useRegex {
-					matches = re.MatchString(cellText)
-				} else {
-					if caseSensitive {
-						matches = strings.Contains(cellText, query)
-					} else {
-						matches = strings.Contains(strings.ToLower(cellText), query)
-					}
-				}
-
-				if matches {
+				if match(b.cont[r][col]) {
 					colResults = append(colResults, SearchResult{Row: r, Col: col})
 				}
 			}
@@ -363,6 +335,27 @@ func performSearch(b *Buffer, query string, useRegex bool, caseSensitive bool) [
 	}
 
 	return results
+}
+
+// searchMatcher builds the cell test of a search: a regex (compiled once, case
+// folded unless caseSensitive) or a substring test. ok is false for a regex
+// that does not compile.
+func searchMatcher(query string, useRegex, caseSensitive bool) (match func(string) bool, ok bool) {
+	if useRegex {
+		if !caseSensitive {
+			query = "(?i)" + query
+		}
+		re, err := regexp.Compile(query)
+		if err != nil {
+			return nil, false
+		}
+		return re.MatchString, true
+	}
+	if caseSensitive {
+		return func(cell string) bool { return strings.Contains(cell, query) }, true
+	}
+	query = strings.ToLower(query)
+	return func(cell string) bool { return strings.Contains(strings.ToLower(cell), query) }, true
 }
 
 // toLower converts a string to lowercase using optimized stdlib

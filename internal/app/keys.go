@@ -344,7 +344,7 @@ func finishOperator(act action, info actionInfo, rawCount, count int) {
 // acts on, with vim's rules: horizontal motions do not wrap, and a motion that
 // cannot move (dh in the first column, dj on the last row) does nothing.
 func operatorRange(motion action, rawCount, count, row, col int) (rows bool, lo, hi int, ok bool) {
-	last := b.colLen - 1
+	last := b.colCount() - 1
 	switch motion {
 	case actMoveRight, actNextColumn:
 		return false, col, min(col+count-1, last), true
@@ -382,7 +382,7 @@ func stepCol(col, delta, n int) int {
 // motionTarget returns where a motion moves the cursor from row, col; ok is
 // false for actions that are not motions over the table.
 func motionTarget(act action, rawCount, count, row, col int) (r, c int, ok bool) {
-	firstRow, lastRow, numCols := firstDataRow(b), b.rowLen-1, b.colLen
+	firstRow, lastRow, numCols := firstDataRow(b), b.rowCount()-1, b.colCount()
 	switch act {
 	case actMoveLeft, actPrevColumn:
 		return row, stepCol(col, -count, numCols), true
@@ -448,6 +448,9 @@ func runAction(act action, rawCount, count int) {
 	case actPrevMatch:
 		gotoSearchResult(-count)
 	case actCancel:
+		if cancelPass() {
+			return // the pass reports its end in the footer
+		}
 		clearSearch()
 	case actFilter:
 		openFilterDialog()
@@ -464,7 +467,7 @@ func runAction(act action, rawCount, count int) {
 	case actYank:
 		yankCells(row, col, row, col)
 	case actYankRow:
-		yankCells(row, 0, row, b.colLen-1)
+		yankCells(row, 0, row, b.colCount()-1)
 	case actVisual:
 		startVisual(visualBlock)
 	case actVisualRow:
