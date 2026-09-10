@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/gdamore/tcell/v2"
@@ -30,6 +31,12 @@ type Config struct {
 	Preview   PreviewConfig      `toml:"preview"`
 	Backup    BackupConfig       `toml:"backup"`
 	Load      LoadConfig         `toml:"load"`
+	Footer    FooterConfig       `toml:"footer"`
+}
+
+// FooterConfig controls the footer's notices.
+type FooterConfig struct {
+	NoticeSeconds *int `toml:"notice_seconds"` // how long a notice stays before the footer settles (default 5, 0 keeps it)
 }
 
 // LoadConfig controls how files are read.
@@ -222,6 +229,13 @@ func applyConfig(cfg Config, themeFlag string) error {
 		}
 		streamAbove = n
 	}
+	noticeTTL = defaultNoticeSeconds * time.Second
+	if cfg.Footer.NoticeSeconds != nil {
+		if *cfg.Footer.NoticeSeconds < 0 {
+			return fmt.Errorf("config: footer: notice_seconds must be 0 or more, got %d", *cfg.Footer.NoticeSeconds)
+		}
+		noticeTTL = time.Duration(*cfg.Footer.NoticeSeconds) * time.Second
+	}
 	return nil
 }
 
@@ -329,6 +343,11 @@ func dumpConfig(w io.Writer) error {
 	sb.WriteString("# 0 loads every file. --stream streams a file whatever its size.\n\n")
 	sb.WriteString("[load]\n")
 	sb.WriteString("stream_above = \"1G\"\n")
+	sb.WriteString("\n# Footer: a notice (what a yank, a removal or a filter did) fades after\n")
+	sb.WriteString("# notice_seconds and the footer settles on the pending edits or All Done; mode\n")
+	sb.WriteString("# indicators and progress texts stay. 0 keeps every notice until the next.\n\n")
+	sb.WriteString("[footer]\n")
+	fmt.Fprintf(&sb, "notice_seconds = %d\n", defaultNoticeSeconds)
 	_, err := io.WriteString(w, sb.String())
 	return err
 }

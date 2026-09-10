@@ -108,6 +108,9 @@ keep    = 20
 
 [load]
 stream_above = "1G"     # stream plain files from this size; "0" loads all
+
+[footer]
+notice_seconds = 5      # a notice fades after this; 0 keeps it until the next
 ```
 
 ## Large files

@@ -879,6 +879,20 @@ keep    = 10
 stream_above = "4G"
 ```
 
+### [footer]
+
+- `notice_seconds`: how long a notice stays in the footer before it fades: a
+  yank report, a removal, a filter's result. After it the footer settles on
+  the edits still pending (`pending: 3 rows removed  |  W write, u undo`) or
+  `All Done`. Mode indicators (`-- VISUAL --`, the editor's modes) and
+  progress texts (`Loading...`, `Filtering... 37%`) never fade. `5` by
+  default; `0` keeps every notice until the next one replaces it.
+
+```toml
+[footer]
+notice_seconds = 3
+```
+
 ## Large Files
 
 A loaded table keeps every cell in memory: a file of a few hundred MB works

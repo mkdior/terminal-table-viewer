@@ -213,21 +213,34 @@ func keyHint(act action, verb string) string {
 func editStatus(did string) {
 	fileNameStr = footerFileName()
 	msg := did
-	if summary := editSummary(); summary != "" {
-		hints := []string{}
-		for _, h := range []string{keyHint(actWrite, "write"), keyHint(actUndo, "undo")} {
-			if h != "" {
-				hints = append(hints, h)
-			}
-		}
-		msg += "  |  pending: " + summary
-		if len(hints) > 0 {
-			msg += "  |  " + strings.Join(hints, ", ")
-		}
+	if pending := pendingStatus(); pending != "" {
+		msg += "  |  " + pending
 	} else {
 		msg += "  |  no pending changes"
 	}
 	drawFooterText(fileNameStr, msg, cursorPosStr)
+}
+
+// pendingStatus sums up the edits not yet written, with the keys that write
+// and undo them ("pending: 3 rows removed  |  W write, u undo"), or "" when
+// there are none. It follows an edit's report and is what the footer settles
+// on once a notice has faded.
+func pendingStatus() string {
+	summary := editSummary()
+	if summary == "" {
+		return ""
+	}
+	hints := []string{}
+	for _, h := range []string{keyHint(actWrite, "write"), keyHint(actUndo, "undo")} {
+		if h != "" {
+			hints = append(hints, h)
+		}
+	}
+	msg := "pending: " + summary
+	if len(hints) > 0 {
+		msg += "  |  " + strings.Join(hints, ", ")
+	}
+	return msg
 }
 
 // refreshView re-derives the filtered view after an edit, as adding or

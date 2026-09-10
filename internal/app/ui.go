@@ -521,6 +521,9 @@ func selectionChanged(row, column int) {
 // tab line when several files are open and the filter strip, both above the
 // table, and records cstr as the current status message.
 func drawFooterText(lstr, cstr, rstr string) {
+	if cstr != statusMessage {
+		armNotice(cstr)
+	}
 	statusMessage = cstr
 	if mainPage == nil {
 		return
@@ -539,6 +542,70 @@ func drawFooterText(lstr, cstr, rstr string) {
 	mainPage.AddText(lstr, false, tview.AlignLeft, theme.Accent).
 		AddText(cstr, false, tview.AlignCenter, theme.Text).
 		AddText(footerRight(rstr), false, tview.AlignRight, theme.Dim)
+}
+
+// Footer notices. A status that reports what an action did (a yank, a
+// removal, a filter's result) is a notice: it stays noticeTTL, then the
+// footer settles on the idle text. Mode indicators ("-- VISUAL --", the
+// editor's modes) and progress texts ("Loading...", "Filtering... 37%") are
+// not notices: they stay until the mode or the work ends. The timer is armed
+// only when the text changes, so redrawing the footer after a motion does not
+// keep a notice alive, and it clears the notice only if the footer still
+// shows it, so a newer status is never wiped. [footer] notice_seconds sets
+// the time; 0 keeps every status until the next one.
+var noticeTTL = defaultNoticeSeconds * time.Second
+
+// defaultNoticeSeconds is how long a notice stays by default.
+const defaultNoticeSeconds = 5
+
+// persistentStatus reports whether a status is a mode indicator or a
+// progress text, which the fade leaves alone.
+func persistentStatus(text string) bool {
+	return strings.HasPrefix(text, "-- ") || strings.Contains(text, "...")
+}
+
+// idleStatus is what the footer shows when nothing is being reported: the
+// visual selection's size while one stands, the edits pending when there
+// are some, else the table's "All Done".
+func idleStatus() string {
+	if visual != visualOff {
+		return visualStatus()
+	}
+	if pending := pendingStatus(); pending != "" {
+		return pending
+	}
+	return "All Done"
+}
+
+// armNotice starts the fade of a status that has just replaced another, for
+// the tab in front, unless it is a mode indicator, a progress text or already
+// the idle text. Timers only run in a running application, as the chord
+// timer does.
+func armNotice(text string) {
+	if noticeTTL <= 0 || !uiRunning.Load() || persistentStatus(text) || text == idleStatus() {
+		return
+	}
+	owner := loaded
+	time.AfterFunc(noticeTTL, func() {
+		if !uiRunning.Load() {
+			return
+		}
+		app.QueueUpdateDraw(func() { expireNotice(owner, text) })
+	})
+}
+
+// expireNotice takes the notice text off the footer of owner (nil for the
+// table without tabs) if the footer still shows it, and puts the idle text
+// there; a tab closed meanwhile is left alone.
+func expireNotice(owner *tab, text string) {
+	if owner != nil && owner.closed {
+		return
+	}
+	withTab(owner, func() {
+		if statusMessage == text {
+			drawFooterText(fileNameStr, idleStatus(), cursorPosStr)
+		}
+	})
 }
 
 // pageRows returns the number of data rows the table can show, at least 1.
