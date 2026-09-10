@@ -264,6 +264,29 @@ func TestTabLineScrollsToKeepTheFrontTabVisible(t *testing.T) {
 	}
 }
 
+func TestQQuitsEveryTab(t *testing.T) {
+	setupTabs(t, csvRows("A", 2), csvRows("B", 2))
+	stops := stubStop(t)
+	press(t, "Q")
+	if *stops != 1 || len(tabs) != 2 {
+		t.Errorf("Q with clean tabs quits at once: stops %d tabs %d", *stops, len(tabs))
+	}
+	press(t, "d d g t Q") // an edit in tab 1, tab 2 in front
+	if !UI.HasPage("quitDialog") || *stops != 1 {
+		t.Fatal("Q with unwritten changes prompts")
+	}
+	if text := dialogText(t); !strings.Contains(text, "1 of 2 tabs") || !strings.Contains(text, "t1.csv: 1 row removed") {
+		t.Errorf("dialog:\n%s", text)
+	}
+	pressModal(t, tcell.KeyTab, tcell.KeyTab, tcell.KeyEnter) // Cancel
+	if UI.HasPage("quitDialog") || *stops != 1 || len(tabs) != 2 || current != 1 {
+		t.Errorf("Cancel stays: stops %d tabs %d current %d", *stops, len(tabs), current)
+	}
+	if got := keys.keysFor(actQuitAll); got != "Q" {
+		t.Errorf("quit_all keys = %q", got)
+	}
+}
+
 func TestRegisterIsSharedAcrossTabs(t *testing.T) {
 	setupTabs(t, csvRows("A", 2), csvRows("B", 2))
 	press(t, "y g t p")

@@ -155,8 +155,8 @@ func getHelpContent() string {
 	sb.WriteString("  file loads at once within one -m budget; closing a tab stops its load\n")
 	sb.WriteString("  and frees its memory. Yanks and removals go to one register, so p\n")
 	sb.WriteString("  pastes across tabs. q closes the tab in front and quits when it is the\n")
-	sb.WriteString("  last one. Quit everything with Ctrl-C: with unwritten changes in several\n")
-	sb.WriteString("  tabs the prompt lists them, and w writes them all before quitting.\n\n")
+	sb.WriteString("  last one. Quit everything with Q or Ctrl-C: with unwritten changes in\n")
+	sb.WriteString("  several tabs the prompt lists them, and w writes them all before quitting.\n\n")
 
 	sb.WriteString(head("Tips") + "\n")
 	sb.WriteString("  zc hides a column behind a narrow marker like a closed fold, zo shows\n")

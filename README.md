@@ -309,8 +309,8 @@ from one edge to the other instead.
 - `?`: help
 - `q`: close the tab; asks whether to write or discard its pending edits, and
   quits when it was the last tab
-- `Ctrl-C`: quit, closing every tab; asks about the unwritten changes of all
-  of them at once
+- `Q`, `Ctrl-C`: quit, closing every tab; asks about the unwritten changes of
+  all of them at once
 
 ### Mouse
 
@@ -379,10 +379,11 @@ whose load hit the limit says so in its footer and keeps what it loaded.
 `q` closes the tab in front and shows its right neighbour (the left one when
 it was last); with pending edits it asks first whether to write them, discard
 them or stay, as quitting does. Closing the last tab quits. Closing a tab
-whose file is still loading stops the load and gives the memory back. `Ctrl-C`
-quits with every tab closed: when several tabs have unwritten changes the
-prompt lists each with its summary, `w` writes them all in turn (a write that
-fails leaves that tab in front with the reason in the footer), `d` discards
+whose file is still loading stops the load and gives the memory back. `Q` or
+`Ctrl-C` quits with every tab closed: when several tabs have unwritten
+changes the prompt lists each with its summary, `w` writes them all in turn
+(a write that fails leaves that tab in front with the reason in the footer),
+`d` discards
 them all, and when one of them cannot be written the prompt only offers to
 discard. Among several files, one with nothing to show (empty, or header only)
 is skipped with a note in the first tab's footer instead of stopping ttv;
@@ -533,8 +534,8 @@ a time, structural ones included.
 `q` asks whether to write, discard or stay while edits are pending, before
 closing the tab or, with one tab open, quitting. `w`, `d`, `c` or Esc answer
 directly; Tab moves between the buttons, and the bright one is the one Enter
-will press. Ctrl-C quits with every tab closed and asks the same about the
-unwritten changes of all tabs at once (see [Tabs](#tabs)).
+will press. `Q` or Ctrl-C quits with every tab closed and asks the same about
+the unwritten changes of all tabs at once (see [Tabs](#tabs)).
 
 #### Rows and columns
 
@@ -743,10 +744,10 @@ Actions, by section of the help dialog:
   `write`
 - Tabs: `next_tab`, `prev_tab`
 - View: `toggle_width`, `fold_column`, `unfold_column`, `toggle_fold`,
-  `unfold_all`, `stats`, `help`, `quit`
+  `unfold_all`, `stats`, `help`, `quit`, `quit_all`
 
-Ctrl-C is not an action: it always quits, closing every tab, before the
-keymap sees it.
+Ctrl-C always quits, closing every tab like `quit_all`, before the keymap
+sees it.
 
 ```toml
 [keys]

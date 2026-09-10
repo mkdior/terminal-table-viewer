@@ -61,7 +61,8 @@ Flags:
   it first), `ir or ic oc` insert
   rows or columns, every write keeps a backup of the previous version
 - Tabs: `gt` next, `gT` previous, `Ngt` tab N, `q` closes the tab (the
-  last one quits), `Ctrl-C` quits every tab and asks about unwritten changes
+  last one quits), `Q` or `Ctrl-C` quits every tab and asks about unwritten
+  changes
 - View: `_` width limit, `zc zo za zR` fold (hide) columns, `I` statistics,
   `?` help
 - Mouse: click selects a cell (a click beside the table does nothing), drag

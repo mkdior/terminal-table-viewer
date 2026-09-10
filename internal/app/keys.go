@@ -523,6 +523,8 @@ func runAction(act action, rawCount, count int) {
 		prevTab(count)
 	case actQuit:
 		requestQuit()
+	case actQuitAll:
+		requestQuitAll()
 	}
 }
 

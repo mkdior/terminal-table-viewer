@@ -39,6 +39,7 @@ const (
 	actStats        action = "stats"
 	actHelp         action = "help"
 	actQuit         action = "quit"
+	actQuitAll      action = "quit_all"
 	actCancel       action = "cancel"
 	actYank         action = "yank"
 	actYankRow      action = "yank_row"
@@ -129,7 +130,8 @@ var actionCatalog = []struct {
 	{actionInfo{actUnfoldAll, "View", "Show every hidden column", false}, []string{"z R"}},
 	{actionInfo{actStats, "View", "Statistics for the current column", false}, []string{"I"}},
 	{actionInfo{actHelp, "View", "Show this help", false}, []string{"?"}},
-	{actionInfo{actQuit, "View", "Close the tab, asking what to do with pending edits; closing the last tab quits (Ctrl-C quits every tab)", false}, []string{"q"}},
+	{actionInfo{actQuit, "View", "Close the tab, asking what to do with pending edits; closing the last tab quits", false}, []string{"q"}},
+	{actionInfo{actQuitAll, "View", "Quit, closing every tab; asks about the unwritten changes of all of them at once (Ctrl-C does the same)", false}, []string{"Q"}},
 }
 
 // actionByName resolves a config key such as "move_left".
