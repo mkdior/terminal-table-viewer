@@ -117,6 +117,7 @@ func initView() {
 	loadStopped = false
 	cellEdit, lineRegister, lineLastChange, tableRegister = nil, nil, nil, nil
 	tabs, current, loaded, budget = nil, -1, nil, nil
+	tabLineWidth, tabLineStart, tabSpans = 0, 0, nil
 	currentPass = nil
 }
 

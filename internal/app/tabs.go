@@ -13,6 +13,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"github.com/rivo/uniseg"
 )
 
 // Tabs, as in vim: ttv A.csv B.csv opens one tab per file, gt and gT switch
@@ -174,19 +175,119 @@ func (t *tab) title() string {
 	return name
 }
 
+// The tab line is laid out for the frame's inner width, which only the draw
+// knows: cellPreview.Draw records it in tabLineWidth and rebuilds the footer
+// when it changes (0 lays every tab out). tabLineStart is the first tab
+// shown; it moves only when the tab in front would fall off an edge, so
+// switching tabs scrolls the line as little as vim's tabline does.
+var (
+	tabLineWidth int
+	tabLineStart int
+)
+
+// maxTabTitle is the width a tab's title may take before it is cut with an
+// ellipsis, so several tabs stay readable at 80 columns.
+const maxTabTitle = 32
+
+// tabSpan is where a tab's label sits in the tab line, in cells from its
+// start, so a click can be mapped back to the tab. The markers for the tabs
+// hidden past an edge have tab tabsBefore and tabsAfter.
+type tabSpan struct{ tab, x1, x2 int }
+
+// Marker spans of the tab line: tabs are hidden before or after them.
+const (
+	tabsBefore = -1
+	tabsAfter  = -2
+)
+
+// tabSpans is where each label of the last tab line drawn sits.
+var tabSpans []tabSpan
+
 // tabLine renders the tab line for the frame header, like vim's tabline: the
 // tabs numbered from 1 with their titles, the one in front in the accent
-// colour and bold.
+// colour and bold. When they do not all fit tabLineWidth, the ones shown are
+// a window that always holds the tab in front, with "<" and ">" marking the
+// tabs hidden past the edges.
 func tabLine() string {
-	labels := make([]string, len(tabs))
+	n := len(tabs)
+	labels, widths := make([]string, n), make([]int, n)
 	for i, t := range tabs {
-		label := " " + strconv.Itoa(i+1) + " " + tview.Escape(t.title()) + " "
+		labels[i] = " " + strconv.Itoa(i+1) + " " + truncateText(t.title(), maxTabTitle) + " "
+		widths[i] = uniseg.StringWidth(labels[i])
+	}
+	// width is what tabs start..end take with their separators and markers.
+	width := func(start, end int) int {
+		w := end - start // the spaces between the labels
+		for i := start; i <= end; i++ {
+			w += widths[i]
+		}
+		if start > 0 {
+			w += 2 // "< "
+		}
+		if end < n-1 {
+			w += 2 // " >"
+		}
+		return w
+	}
+	// extend returns the last tab that fits after start.
+	extend := func(start int) int {
+		end := start
+		for end+1 < n && width(start, end+1) <= tabLineWidth {
+			end++
+		}
+		return end
+	}
+	start, end := 0, n-1
+	if tabLineWidth > 0 && n > 0 {
+		front := clampInt(current, 0, n-1)
+		start = min(clampInt(tabLineStart, 0, n-1), front)
+		end = extend(start)
+		for end < front { // the front tab is past the right edge: scroll
+			start++
+			end = extend(start)
+		}
+	}
+	tabLineStart = start
+
+	var sb strings.Builder
+	spans := tabSpans[:0]
+	x := 0
+	if start > 0 {
+		sb.WriteString("< ")
+		spans = append(spans, tabSpan{tabsBefore, 0, 1})
+		x = 2
+	}
+	for i := start; i <= end; i++ {
+		if i > start {
+			sb.WriteString(" ")
+			x++
+		}
+		label := tview.Escape(labels[i])
 		if i == current {
 			label = theme.tag(theme.Accent) + "[::b]" + label + "[-:-:-]"
 		}
-		labels[i] = label
+		sb.WriteString(label)
+		spans = append(spans, tabSpan{i, x, x + widths[i] - 1})
+		x += widths[i]
 	}
-	return strings.Join(labels, " ")
+	if end < n-1 {
+		sb.WriteString(" >")
+		spans = append(spans, tabSpan{tabsAfter, x, x + 1})
+	}
+	tabSpans = spans
+	return sb.String()
+}
+
+// tabAt returns what sits at cell x of the tab line as drawn last: a tab's
+// index, or tabsBefore / tabsAfter for the edge markers. ok is false between
+// labels and past the end.
+func tabAt(x int) (tab int, ok bool) {
+	for _, s := range tabSpans {
+		if x >= s.x1 && x <= s.x2 {
+			return s.tab, true
+		}
+	}
+	return 0, false
 }
 
 // refreshTabLine redraws the footer of the tab in front so the tab line shows

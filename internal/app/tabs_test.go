@@ -197,6 +197,72 @@ func TestTabLineShowsLoadProgress(t *testing.T) {
 	}
 }
 
+func TestTabLineScrollsToKeepTheFrontTabVisible(t *testing.T) {
+	setupTabs(t, csvRows("A", 1), csvRows("B", 1), csvRows("C", 1), csvRows("D", 1), csvRows("E", 1), csvRows("F", 1))
+	t.Cleanup(func() { tabLineWidth, tabLineStart, tabSpans = 0, 0, nil })
+	// Every label is " N tN.csv ", ten cells; 34 cells hold three of them and
+	// one edge marker, or two and both markers.
+	tabLineWidth = 34
+	line := tabLine()
+	if want := " 1 t1.csv   2 t2.csv   3 t3.csv  >"; strings.Contains(line, "t4.csv") || !strings.HasSuffix(line, " 3 t3.csv  >") || !strings.HasPrefix(line, "[") {
+		t.Errorf("from the first tab: %q, want the labels of %q", line, want)
+	}
+	if tab, ok := tabAt(22); !ok || tab != 2 {
+		t.Errorf("tabAt(22) = %d %v, want tab 2", tab, ok)
+	}
+	if tab, ok := tabAt(33); !ok || tab != tabsAfter {
+		t.Errorf("tabAt(33) = %d %v, want the right marker", tab, ok)
+	}
+	if _, ok := tabAt(10); ok {
+		t.Error("the space between two labels is no tab")
+	}
+	press(t, "5 g t") // tab 5 is past the edge: the window scrolls until it shows
+	line = tabLine()
+	if !strings.HasPrefix(line, "< ") || !strings.Contains(line, "[::b] 5 t5.csv [-:-:-]") || !strings.HasSuffix(line, " 6 t6.csv ") || strings.Contains(line, "t3.csv") {
+		t.Errorf("after 5gt: %q", line)
+	}
+	if tab, ok := tabAt(0); !ok || tab != tabsBefore {
+		t.Errorf("tabAt(0) = %d %v, want the left marker", tab, ok)
+	}
+	if tab, ok := tabAt(2); !ok || tab != 3 {
+		t.Errorf("tabAt(2) = %d %v, want tab 3 (the first shown)", tab, ok)
+	}
+	press(t, "g T") // tab 4 is within the window: nothing scrolls
+	if line = tabLine(); !strings.Contains(line, "[::b] 4 t4.csv [-:-:-]") || tabLineStart != 3 {
+		t.Errorf("after gT: %q start %d", line, tabLineStart)
+	}
+	press(t, "g T") // tab 3 is before the window: it becomes the first shown
+	if line = tabLine(); !strings.HasPrefix(line, "< ") || !strings.Contains(line, "[::b] 3 t3.csv [-:-:-]") || !strings.HasSuffix(line, " >") || strings.Contains(line, "t5.csv") {
+		t.Errorf("after gT gT: %q", line)
+	}
+	// The draw records the frame's width and lays the line out for it.
+	tabLineWidth = 0
+	screen := tcell.NewSimulationScreen("UTF-8")
+	if err := screen.Init(); err != nil {
+		t.Fatal(err)
+	}
+	screen.SetSize(34, 8)
+	mainView.SetRect(0, 0, 34, 8)
+	mainView.Draw(screen)
+	screen.Show()
+	top := strings.Split(screenText(screen), "\n")[0]
+	if tabLineWidth != 34 || !strings.HasPrefix(top, "<  3 t3.csv   4 t4.csv  >") {
+		t.Errorf("drawn at 34 cells (width %d): %q", tabLineWidth, top)
+	}
+	// A long file name is cut so several tabs stay readable.
+	tabs[2].name = strings.Repeat("n", 60) + ".csv"
+	tabLineWidth = 0
+	line = tabLine()
+	for _, s := range tabSpans {
+		if s.tab == 2 && s.x2-s.x1+1 > maxTabTitle+4 {
+			t.Errorf("a long name is cut: label %d cells wide in %q", s.x2-s.x1+1, line)
+		}
+	}
+	if !strings.Contains(line, "...") {
+		t.Errorf("the cut shows an ellipsis: %q", line)
+	}
+}
+
 func TestRegisterIsSharedAcrossTabs(t *testing.T) {
 	setupTabs(t, csvRows("A", 2), csvRows("B", 2))
 	press(t, "y g t p")

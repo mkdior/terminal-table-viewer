@@ -109,6 +109,11 @@ func (p *cellPreview) Draw(screen tcell.Screen) {
 	// The table is as wide as the frame (no side borders), and the frame's
 	// rect is known before the table's own is set by the draw.
 	_, _, frameW, _ := p.GetInnerRect()
+	if len(tabs) > 1 && frameW != tabLineWidth {
+		// The tab line is laid out for this width, known only here.
+		tabLineWidth = frameW
+		drawFooterText(fileNameStr, statusMessage, cursorPosStr)
+	}
 	pinColumnOffset(frameW)
 	p.Frame.Draw(screen)
 	if cellEdit != nil {
