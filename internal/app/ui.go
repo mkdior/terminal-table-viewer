@@ -648,30 +648,138 @@ func cellUnderPointer(x, y int) (row, col int, ok bool) {
 	return 0, 0, false
 }
 
-// handleTableMouse is the table's mouse capture: the wheel moves the
-// selection one row, clicks count as the user moving the cursor, and nothing
-// reaches the table while a cell is being edited, so the editor stays on its
-// cell instead of the table scrolling away underneath it. A click that lands
-// on no data cell (the blank area below the last row or right of the last
-// column, the frozen header) is swallowed: tview would select the cell it
-// computes there, row -1 past the end, and the next draw would clamp that to
-// the first row and scroll to it, so the click that merely brings the
-// terminal back to the front lost the cursor.
+// mouseDrag is the state of a selection made with the mouse, after Claude
+// Code's: the primary button went down on a cell, and once the pointer moves
+// with it held the cells from that anchor to the pointer are selected through
+// visual mode, exactly as v and the motions would select them.
+var mouseDrag struct {
+	pressed  bool // the button is down on a data cell
+	row, col int  // the cell it went down on: the anchor
+	dragging bool // the pointer has moved since
+}
+
+// dragTarget returns the cell a drag should extend to for pointer position
+// x, y: the row and column drawn there, and where nothing is drawn (past
+// the edges of the table, the blank area below the last row) one row or
+// column further than the cursor in that direction, so a drag that leaves
+// the table scrolls it a step per move. The header row stands for the first
+// data row.
+func dragTarget(x, y int) (row, col int) {
+	row, col = bufferTable.GetSelection()
+	tx, ty, tw, _ := bufferTable.GetInnerRect()
+	switch r, ok := rowAt(y); {
+	case ok:
+		row = max(r, firstDataRow(b))
+	case y < ty+b.rowFreeze:
+		row--
+	default:
+		row++
+	}
+	switch c, ok := columnAt(x); {
+	case ok:
+		col = c
+	case x < tx:
+		col--
+	case x >= tx+tw:
+		col++
+	}
+	return clampRow(row, b), clampInt(col, 0, b.colCount()-1)
+}
+
+// rowAt returns the table row drawn on screen row y this frame.
+func rowAt(y int) (row int, ok bool) {
+	if currentContent == nil {
+		return 0, false
+	}
+	for pos, cell := range currentContent.cells {
+		if cell == nil {
+			continue
+		}
+		if _, cy, cw := cell.GetLastPosition(); cw > 0 && cy == y {
+			return pos[0], true
+		}
+	}
+	return 0, false
+}
+
+// columnAt returns the table column drawn across screen column x this frame
+// (the separator right of a cell counts as the cell).
+func columnAt(x int) (col int, ok bool) {
+	if currentContent == nil {
+		return 0, false
+	}
+	for pos, cell := range currentContent.cells {
+		if cell == nil {
+			continue
+		}
+		if cx, _, cw := cell.GetLastPosition(); cw > 0 && x >= cx && x <= cx+cw {
+			return pos[1], true
+		}
+	}
+	return 0, false
+}
+
+// handleTableMouse is the table's mouse capture. Nothing reaches the table
+// while a cell is being edited, so the editor stays on its cell instead of
+// the table scrolling away underneath it. A click that lands on no data cell
+// (the blank area below the last row or right of the last column, the frozen
+// header) is swallowed: tview would select the cell it computes there, row -1
+// past the end, and the next draw would clamp that to the first row and
+// scroll to it, so the click that merely brings the terminal back to the
+// front lost the cursor. Otherwise: a click selects the cell (and clears a
+// standing selection); a double click edits it; a drag selects a block and,
+// with copy_on_select, copies it on release, leaving the selection standing
+// as v would, so y, d, x and p still act on it and Esc or a click clears it;
+// a right click clears the selection or, without one, pastes over the cell;
+// a middle click pastes; the wheel moves a row, or a column sideways.
 func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 	if cellEdit != nil {
 		return action, nil
 	}
+	x, y := event.Position()
 	switch action {
+	case tview.MouseMove:
+		if !mouseDrag.pressed || event.Buttons()&tcell.ButtonPrimary == 0 {
+			return action, event // hover, or a move with another button
+		}
+		if !mouseDrag.dragging {
+			mouseDrag.dragging = true
+			userMovedCursor = true
+			visual = visualOff // a new drag replaces a standing selection
+			bufferTable.Select(mouseDrag.row, mouseDrag.col)
+			startVisual(visualBlock)
+		}
+		// From the anchor on the first move, then from the cursor.
+		row, col := dragTarget(x, y)
+		if r, c := bufferTable.GetSelection(); r != row || c != col {
+			bufferTable.Select(row, col)
+		}
+		return tview.MouseConsumed, nil
+	case tview.MouseLeftUp:
+		dragged := mouseDrag.dragging
+		mouseDrag.pressed, mouseDrag.dragging = false, false
+		if !dragged {
+			return action, event // a click follows
+		}
+		if clipboardCopyOnSelect {
+			r1, c1, r2, c2 := visualRect()
+			yankCells(r1, c1, r2, c2)
+		}
+		return tview.MouseConsumed, nil
 	case tview.MouseLeftDown, tview.MouseLeftClick, tview.MouseLeftDoubleClick,
 		tview.MouseMiddleClick, tview.MouseRightClick:
-		x, y := event.Position()
 		row, col, ok := cellUnderPointer(x, y)
 		if !ok || row < b.rowFreeze {
 			return tview.MouseConsumed, nil
 		}
 		switch action {
+		case tview.MouseLeftDown:
+			mouseDrag.pressed, mouseDrag.row, mouseDrag.col, mouseDrag.dragging = true, row, col, false
 		case tview.MouseLeftClick:
 			userMovedCursor = true
+			if visual != visualOff {
+				exitVisual("All Done")
+			}
 			if hiddenCols[col] { // a click on the fold marker opens the fold
 				unfoldColumns(col, col)
 			}
@@ -681,9 +789,19 @@ func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.
 			bufferTable.Select(row, col)
 			startCellEdit(actEdit)
 			return tview.MouseConsumed, nil
+		case tview.MouseRightClick:
+			if visual != visualOff {
+				exitVisual("All Done")
+				return tview.MouseConsumed, nil
+			}
+			bufferTable.Select(row, col)
+			pasteCells(row, col, row, col)
+			return tview.MouseConsumed, nil
+		case tview.MouseMiddleClick:
+			bufferTable.Select(row, col)
+			pasteCells(row, col, row, col)
+			return tview.MouseConsumed, nil
 		}
-	}
-	switch action {
 	case tview.MouseScrollUp:
 		row, col := bufferTable.GetSelection()
 		if row > firstDataRow(b) {
@@ -694,6 +812,13 @@ func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.
 		if row < b.rowCount()-1 {
 			bufferTable.Select(row+1, col)
 		}
+	case tview.MouseScrollLeft, tview.MouseScrollRight:
+		row, col := bufferTable.GetSelection()
+		step := 1
+		if action == tview.MouseScrollLeft {
+			step = -1
+		}
+		bufferTable.Select(row, clampInt(col+step, 0, b.colCount()-1))
 	}
 	return action, event
 }

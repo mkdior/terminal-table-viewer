@@ -58,8 +58,9 @@ type PreviewConfig struct {
 
 // ClipboardConfig overrides how yanked text reaches the clipboard.
 type ClipboardConfig struct {
-	Command string `toml:"command"` // command reading the text on stdin; empty means auto-detect
-	OSC52   *bool  `toml:"osc52"`   // also emit the OSC 52 escape (default true)
+	Command      string `toml:"command"`        // command reading the text on stdin; empty means auto-detect
+	OSC52        *bool  `toml:"osc52"`          // also emit the OSC 52 escape (default true)
+	CopyOnSelect *bool  `toml:"copy_on_select"` // copy a block selected with the mouse on release (default true)
 }
 
 // keyList is one key or a list of keys in TOML.
@@ -180,6 +181,7 @@ func applyConfig(cfg Config, themeFlag string) error {
 	wrapColumns = cfg.Movement.WrapColumns
 	clipboardOverride = strings.TrimSpace(cfg.Clipboard.Command)
 	clipboardOSC52 = cfg.Clipboard.OSC52 == nil || *cfg.Clipboard.OSC52
+	clipboardCopyOnSelect = cfg.Clipboard.CopyOnSelect == nil || *cfg.Clipboard.CopyOnSelect
 	pos, err := parsePreviewPosition(cfg.Preview.Position)
 	if err != nil {
 		return fmt.Errorf("config: preview: %w", err)
@@ -288,10 +290,13 @@ func dumpConfig(w io.Writer) error {
 	sb.WriteString("wrap_columns = false\n")
 	sb.WriteString("\n# Clipboard: by default ttv detects the system (Windows and WSL, macOS, Wayland,\n")
 	sb.WriteString("# X11, Termux) and also sends the OSC 52 escape. command replaces the detection\n")
-	sb.WriteString("# with a program that reads the text on stdin, e.g. \"xclip -selection clipboard\".\n\n")
+	sb.WriteString("# with a program that reads the text on stdin, e.g. \"xclip -selection clipboard\".\n")
+	sb.WriteString("# copy_on_select copies a block selected by dragging the mouse when the button\n")
+	sb.WriteString("# is released, as terminals do; off, the selection waits for y.\n\n")
 	sb.WriteString("[clipboard]\n")
-	sb.WriteString("command = \"\"\n")
-	sb.WriteString("osc52   = true\n")
+	sb.WriteString("command        = \"\"\n")
+	sb.WriteString("osc52          = true\n")
+	sb.WriteString("copy_on_select = true\n")
 	sb.WriteString("\n# Preview: where the box with the full value of a cut cell appears: \"bottom\" and\n")
 	sb.WriteString("# \"top\" centre it at the bottom of the table or under the header, \"cursor\" lays it\n")
 	sb.WriteString("# over the selected cell. A value that lists several items separated by separator\n")

@@ -64,6 +64,11 @@ Flags:
   last one quits), `Ctrl-C` quits every tab and asks about unwritten changes
 - View: `_` width limit, `zc zo za zR` fold (hide) columns, `I` statistics,
   `?` help
+- Mouse: click selects a cell (a click beside the table does nothing), drag
+  selects a block and copies it on release (`copy_on_select`), double click
+  edits, right click clears the selection or pastes, middle click pastes,
+  the wheel moves; on the tab line a click shows a tab, a middle click
+  closes it, the wheel steps; a click on a fold marker opens the column
 
 ## Configuration
 
@@ -84,8 +89,9 @@ accent = "colour101"    # roles: background text dim panel stripe border
 wrap_columns = false    # h l w b continue past the first and last column
 
 [clipboard]
-command = ""            # program reading the text on stdin; empty detects one
-osc52   = true          # also send the OSC 52 escape
+command        = ""     # program reading the text on stdin; empty detects one
+osc52          = true   # also send the OSC 52 escape
+copy_on_select = true   # a block selected with the mouse is copied on release
 
 [preview]
 position    = "bottom"  # bottom, top or cursor: where a cut cell's value shows

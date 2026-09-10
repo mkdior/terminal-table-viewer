@@ -318,17 +318,27 @@ from one edge to the other instead.
   show that tab (the `<` and `>` markers show the next hidden one); on the
   marker of a hidden column, open the fold; on `? help` in the footer, open
   the help
+- Drag: select a block of cells from the press to the pointer, as `v` and the
+  motions do; dragging past an edge of the table scrolls it. When the button
+  is released the block is copied to the clipboard (`copy_on_select` in the
+  `[clipboard]` section turns that off) and the selection stays, so `y`
+  copies it again, `d` and `x` remove it, `p` pastes over it, and Esc or a
+  click clears it
 - Double click: edit the cell, as `E` does
-- Middle click on a tab: close it, asking about its pending edits as `q` does
-- Scroll wheel: move the selection up or down one row; over the tab line,
-  step through the tabs
+- Right click: clear the selection; without one, paste the register over the
+  cell, as `p` does
+- Middle click: paste over the cell; on a tab in the tab line, close that
+  tab, asking about its pending edits as `q` does
+- Scroll wheel: move the selection up or down one row, or sideways one
+  column; over the tab line, step through the tabs
 - Click on buttons and checkboxes: works in the search, filter and statistics
   dialogs
 
 A click that lands on no cell, in the blank area below the last row or on
 the frozen header, does nothing, so clicking the terminal to bring it back to
-the front never loses the cursor. Mouse support depends on the terminal;
-keyboard navigation always works.
+the front never loses the cursor. Mouse support depends on the terminal, and
+while the table has the mouse the terminal's own text selection needs
+Shift held; keyboard navigation always works.
 
 ## Features in Detail
 
@@ -802,11 +812,15 @@ separator   = "|"
   automatic detection, for example `xclip -selection clipboard`.
 - `osc52`: `true` (default) or `false`; whether to also send the OSC 52
   escape.
+- `copy_on_select`: `true` (default) or `false`; whether a block selected by
+  dragging the mouse is copied when the button is released, as terminals do.
+  Off, the selection stays and waits for `y`.
 
 ```toml
 [clipboard]
-command = "wl-copy --primary"
-osc52   = false
+command        = "wl-copy --primary"
+osc52          = false
+copy_on_select = false
 ```
 
 ### [backup]

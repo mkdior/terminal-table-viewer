@@ -108,11 +108,15 @@ func getHelpContent() string {
 
 	sb.WriteString(head("Mouse") + "\n")
 	sb.WriteString(entry("Left click", "Select the cell; on a tab, show it; on a fold marker, open it"))
+	sb.WriteString(entry("Drag", "Select a block of cells, copied when the button is released"))
 	sb.WriteString(entry("Double click", "Edit the cell, as E does"))
-	sb.WriteString(entry("Middle click", "On a tab: close it, asking about its edits as q does"))
-	sb.WriteString(entry("Scroll wheel", "Move up/down through rows; over the tab line, step through tabs"))
+	sb.WriteString(entry("Right click", "Clear the selection; without one, paste over the cell (p)"))
+	sb.WriteString(entry("Middle click", "Paste over the cell (p); on a tab, close the tab"))
+	sb.WriteString(entry("Scroll wheel", "Move a row, sideways a column; over the tab line, step tabs"))
 	sb.WriteString(entry("Click buttons", "Dialogs and forms; \"? help\" in the footer opens this help"))
-	sb.WriteString("\n")
+	sb.WriteString("  A dragged selection stays, as after v: y copies it again, d and x remove\n")
+	sb.WriteString("  it, Esc or a click clears it. copy_on_select in [clipboard] turns the\n")
+	sb.WriteString("  copy on release off.\n\n")
 
 	sb.WriteString(head("Search and filter") + "\n")
 	sb.WriteString("  Search is case-insensitive unless Case Sensitive is checked; Tab moves\n")

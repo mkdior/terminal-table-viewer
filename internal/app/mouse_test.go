@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
@@ -113,6 +114,131 @@ func TestMouseOnTheTabLineAndFooter(t *testing.T) {
 	pagesClick(tview.MouseLeftClick, x, y, tcell.ButtonPrimary)
 	if r, c := bufferTable.GetSelection(); r != 2 || c != 1 {
 		t.Errorf("the click reached the table: selection %d,%d", r, c)
+	}
+}
+
+func TestDragSelectsABlockAndCopiesItOnRelease(t *testing.T) {
+	screen := smallUI(t)
+	ran := stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
+	oldCopy := clipboardCopyOnSelect
+	t.Cleanup(func() {
+		clipboardCopyOnSelect, visual, mouseDrag.pressed, mouseDrag.dragging = oldCopy, visualOff, false, false
+	})
+	clipboardCopyOnSelect = true
+	x1, y1 := cellPos(t, 1, 0)
+	x2, y2 := cellPos(t, 3, 2)
+
+	// Press on a1, move to c3 with the button held, release.
+	if _, ev := handleTableMouse(tview.MouseLeftDown, mouse(x1, y1, tcell.ButtonPrimary)); ev == nil || !mouseDrag.pressed || mouseDrag.dragging {
+		t.Fatalf("the press is noted and passed on: %+v", mouseDrag)
+	}
+	act, ev := handleTableMouse(tview.MouseMove, mouse(x2, y2, tcell.ButtonPrimary))
+	if ev != nil || act != tview.MouseConsumed || visual != visualBlock {
+		t.Fatalf("a move with the button held starts the selection: visual %v", visual)
+	}
+	if r1, c1, r2, c2 := visualRect(); r1 != 1 || c1 != 0 || r2 != 3 || c2 != 2 {
+		t.Errorf("selection %d,%d..%d,%d, want 1,0..3,2", r1, c1, r2, c2)
+	}
+	if !strings.Contains(statusMessage, "3 rows x 3 columns") {
+		t.Errorf("the footer follows the drag: %q", statusMessage)
+	}
+	act, ev = handleTableMouse(tview.MouseLeftUp, mouse(x2, y2, tcell.ButtonNone))
+	if ev != nil || act != tview.MouseConsumed || mouseDrag.pressed || mouseDrag.dragging {
+		t.Fatalf("the release ends the drag: %+v", mouseDrag)
+	}
+	if len(*ran) != 1 || (*ran)[0] != "xclip:a1\tb1\tc1\na2\tb2\tc2\na3\tb3\tc3" {
+		t.Errorf("the block is copied on release: %q", *ran)
+	}
+	if visual != visualBlock || !strings.HasPrefix(statusMessage, "Yanked 3 rows x 3 columns") {
+		t.Errorf("the selection stays with the yank reported: visual %v status %q", visual, statusMessage)
+	}
+	press(t, "y") // the standing selection still takes the keys
+	if len(*ran) != 2 || (*ran)[1] != (*ran)[0] || visual != visualOff {
+		t.Errorf("y copies it again and leaves visual mode: %d copies, visual %v", len(*ran), visual)
+	}
+
+	// A move without the button is a hover; a drag that left the table extends
+	// a step past the cursor; a click clears the standing selection.
+	handleTableMouse(tview.MouseLeftDown, mouse(x1, y1, tcell.ButtonPrimary))
+	if _, ev := handleTableMouse(tview.MouseMove, mouse(x2, y2, tcell.ButtonNone)); ev == nil || visual != visualOff {
+		t.Error("a move with no button held selects nothing")
+	}
+	handleTableMouse(tview.MouseMove, mouse(x2, 12, tcell.ButtonPrimary)) // below the rows
+	if r, _ := bufferTable.GetSelection(); visual != visualBlock || r != 2 {
+		t.Errorf("a drag below the table steps a row down from the anchor each move: visual %v row %d", visual, r)
+	}
+	handleTableMouse(tview.MouseMove, mouse(x2, 12, tcell.ButtonPrimary))
+	if r, c := bufferTable.GetSelection(); r != 3 || c != 2 {
+		t.Errorf("and again: %d,%d", r, c)
+	}
+	handleTableMouse(tview.MouseLeftUp, mouse(x2, 12, tcell.ButtonNone))
+	if len(*ran) != 3 {
+		t.Errorf("copied again on release: %d", len(*ran))
+	}
+	handleTableMouse(tview.MouseLeftDown, mouse(x1, y1, tcell.ButtonPrimary))
+	handleTableMouse(tview.MouseLeftUp, mouse(x1, y1, tcell.ButtonNone))
+	if _, ev := handleTableMouse(tview.MouseLeftClick, mouse(x1, y1, tcell.ButtonNone)); ev == nil || visual != visualOff {
+		t.Errorf("a click clears the selection and reaches the table: visual %v", visual)
+	}
+	if len(*ran) != 3 {
+		t.Errorf("a click copies nothing: %d", len(*ran))
+	}
+
+	// With copy_on_select off the selection waits for y.
+	clipboardCopyOnSelect = false
+	handleTableMouse(tview.MouseLeftDown, mouse(x1, y1, tcell.ButtonPrimary))
+	handleTableMouse(tview.MouseMove, mouse(x2, y2, tcell.ButtonPrimary))
+	handleTableMouse(tview.MouseLeftUp, mouse(x2, y2, tcell.ButtonNone))
+	if len(*ran) != 3 || visual != visualBlock || !strings.Contains(statusMessage, "3 rows x 3 columns") {
+		t.Errorf("no copy on release: %d copies, visual %v, status %q", len(*ran), visual, statusMessage)
+	}
+	press(t, "esc")
+	if visual != visualOff {
+		t.Error("Esc clears the selection")
+	}
+	_ = screen
+}
+
+func TestRightAndMiddleClickAndSidewaysWheel(t *testing.T) {
+	screen := smallUI(t)
+	stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
+	t.Cleanup(func() { visual, tableRegister, lineRegister = visualOff, nil, nil })
+	// Edits re-derive the view, so the cells are drawn again before each hit test.
+	draw := func() {
+		mainView.Draw(screen)
+		screen.Show()
+	}
+	x, y := cellPos(t, 2, 1)
+	press(t, "y") // a1 into the register
+	act, ev := handleTableMouse(tview.MouseRightClick, mouse(x, y, tcell.ButtonSecondary))
+	if ev != nil || act != tview.MouseConsumed || b.cont[2][1] != "a1" || !strings.Contains(statusMessage, "Pasted 1 cell") {
+		t.Errorf("a right click without a selection pastes over the cell: %v status %q", b.cont[2], statusMessage)
+	}
+	press(t, "u")
+	draw()
+	x3, y3 := cellPos(t, 3, 2)
+	handleTableMouse(tview.MouseMiddleClick, mouse(x3, y3, tcell.ButtonMiddle))
+	if b.cont[3][2] != "a1" {
+		t.Errorf("a middle click pastes: %v", b.cont[3])
+	}
+	press(t, "u")
+	draw()
+	x, y = cellPos(t, 2, 1)
+	press(t, "g g 0 v j") // a standing selection
+	handleTableMouse(tview.MouseRightClick, mouse(x, y, tcell.ButtonSecondary))
+	if visual != visualOff || b.cont[2][1] != "b2" {
+		t.Errorf("a right click with a selection clears it and pastes nothing: visual %v cell %q", visual, b.cont[2][1])
+	}
+	bufferTable.Select(1, 1)
+	handleTableMouse(tview.MouseScrollRight, mouse(x, y, tcell.WheelRight))
+	if _, c := bufferTable.GetSelection(); c != 2 {
+		t.Errorf("the wheel sideways moves a column: %d", c)
+	}
+	handleTableMouse(tview.MouseScrollLeft, mouse(x, y, tcell.WheelLeft))
+	handleTableMouse(tview.MouseScrollLeft, mouse(x, y, tcell.WheelLeft))
+	handleTableMouse(tview.MouseScrollLeft, mouse(x, y, tcell.WheelLeft))
+	if _, c := bufferTable.GetSelection(); c != 0 {
+		t.Errorf("and stops at the first column: %d", c)
 	}
 }
 

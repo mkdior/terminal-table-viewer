@@ -47,8 +47,9 @@ var (
 
 // Clipboard settings from the config file.
 var (
-	clipboardOverride string // user-supplied command; empty means auto-detect
-	clipboardOSC52    = true // emit the OSC 52 escape
+	clipboardOverride     string // user-supplied command; empty means auto-detect
+	clipboardOSC52        = true // emit the OSC 52 escape
+	clipboardCopyOnSelect = true // a block selected with the mouse is copied when the button is released
 )
 
 // clipTool is a clipboard command that reads the text from stdin.
