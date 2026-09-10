@@ -305,6 +305,10 @@ from one edge to the other instead.
   selected columns
 - `za`: hide the current column, or show it when hidden
 - `zR`: show every hidden column
+- `K`: show the full value of the current cell in the floating box, whatever
+  its length, until the cursor moves or Esc closes it; the text in the box
+  can be selected with the mouse
+- `zK`: hide the box that appears on its own for cut values, or show it again
 - `I`: statistics for the current column
 - `?`: help
 - `q`: close the tab; asks whether to write or discard its pending edits, and
@@ -674,7 +678,11 @@ on. By default it is centred at the bottom of the table. `position` in the
 cell so the value pops out in place, its first line starting where the cell's
 text starts (or its last line ending there when there is no room below).
 Values longer than 1000 characters, or too tall to fit in half the table, are
-not previewed.
+not previewed. `K` shows the box for the current cell whatever its length,
+until the cursor moves or Esc closes it, so any value can be read whole and a
+part of it selected with the mouse; `zK` hides the automatic box and shows it
+again, and `show` in `[preview]` sets whether it appears for cut values
+(default), for every cell or never.
 
 A value that lists several items, `red; green; blue`, is shown one item per
 line so the list can be read at a glance; `split_items = false` shows it as
@@ -805,12 +813,17 @@ wrap_columns = true
 - `split_items`: `true` (default) shows a value that lists several items one
   item per line; `false` shows it as one wrapped run of text.
 - `separator`: what separates the items; `;` by default.
+- `show`: when the box appears on its own: `cut` (default) for values cut by
+  a width limit, `all` for every cell, `off` never. `zK` hides it and shows
+  it again at runtime; `K` shows the current cell's value once whatever the
+  setting.
 
 ```toml
 [preview]
 position    = "cursor"
 split_items = true
 separator   = "|"
+show        = "all"
 ```
 
 ### [clipboard]

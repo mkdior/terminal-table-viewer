@@ -63,8 +63,9 @@ Flags:
 - Tabs: `gt` next, `gT` previous, `Ngt` tab N, `q` closes the tab (the
   last one quits), `Q` or `Ctrl-C` quits every tab and asks about unwritten
   changes
-- View: `_` width limit, `zc zo za zR` fold (hide) columns, `I` statistics,
-  `?` help
+- View: `_` width limit, `zc zo za zR` fold (hide) columns, `K` show the
+  cell's full value in the box once (its text can be mouse-selected), `zK`
+  hide or show the automatic box, `I` statistics, `?` help
 - Mouse: click selects a cell (a click beside the table does nothing), drag
   selects a block and copies it on release (`copy_on_select`), double click
   edits, right click clears the selection or pastes, middle click pastes,
@@ -98,6 +99,7 @@ copy_on_select = true   # a block selected with the mouse is copied on release
 position    = "bottom"  # bottom, top or cursor: where a cut cell's value shows
 split_items = true      # list values one item per line
 separator   = ";"
+show        = "cut"     # box appears for cut values, all cells, or never (off)
 
 [backup]
 enabled = true

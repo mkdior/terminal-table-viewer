@@ -30,6 +30,111 @@ const (
 // previewPos is the active placement; the [preview] config section sets it.
 var previewPos = previewBottom
 
+// previewMode says which cells get the full-value box.
+type previewMode int
+
+const (
+	previewCut previewMode = iota // values cut by a width limit (the default)
+	previewAll                    // every cell, so any value can be read and selected as text
+	previewOff                    // never
+)
+
+// previewShow is the active mode, from show in [preview]; zK switches it off
+// and back, and previewBefore remembers what to come back to.
+var (
+	previewShow   = previewCut
+	previewBefore = previewCut
+)
+
+// previewModeNames are the config spellings of the modes.
+var previewModeNames = []string{"cut", "all", "off"}
+
+// String is the config spelling of the mode.
+func (m previewMode) String() string { return previewModeNames[m] }
+
+// describe says what the mode shows, for the footer.
+func (m previewMode) describe() string {
+	switch m {
+	case previewAll:
+		return "shown for every cell"
+	case previewOff:
+		return "hidden"
+	}
+	return "shown for cut values"
+}
+
+// marker is the footer's reminder of a mode other than the default, "" for
+// the default.
+func (m previewMode) marker() string {
+	switch m {
+	case previewAll:
+		return "box: every cell"
+	case previewOff:
+		return "box: hidden"
+	}
+	return ""
+}
+
+// parsePreviewMode reads the config spelling of a mode.
+func parsePreviewMode(s string) (previewMode, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return previewCut, nil
+	}
+	for i, name := range previewModeNames {
+		if s == name {
+			return previewMode(i), nil
+		}
+	}
+	return 0, fmt.Errorf("unknown preview mode %q; use cut, all or off", s)
+}
+
+// peekCell is K: it shows the full value of the current cell in the box
+// whatever its length and whatever the mode, so any value can be read whole
+// and selected as text, until the cursor moves on or Esc closes it. A one-off
+// look, in the spirit of vim's K, rather than a mode.
+func peekCell() {
+	if mainView == nil {
+		return
+	}
+	row, col := bufferTable.GetSelection()
+	text, ok := b.cellAt(row, col)
+	if !ok || row < b.rowFreeze || text == "" {
+		drawFooterText(fileNameStr, "Nothing to show: the cell is empty", cursorPosStr)
+		return
+	}
+	mainView.peek, mainView.peekRow, mainView.peekCol = true, row, col
+	updateCellPreview(row, col)
+	drawFooterText(fileNameStr, "Showing the full value of "+columnTitle(col)+"; a move or Esc closes it", cursorPosStr)
+}
+
+// closePeek ends a K peek and reports whether one was open.
+func closePeek() bool {
+	if mainView == nil || !mainView.peek {
+		return false
+	}
+	mainView.peek = false
+	updateCellPreview(bufferTable.GetSelection())
+	return true
+}
+
+// togglePreviewBox is zK: it hides the automatic full-value box, or shows it
+// again as the show setting says, and says so in the footer.
+func togglePreviewBox() {
+	if previewShow != previewOff {
+		previewBefore, previewShow = previewShow, previewOff
+	} else {
+		previewShow = previewBefore
+		if previewShow == previewOff { // off was the setting: cut is the way back
+			previewShow = previewCut
+		}
+	}
+	row, col := bufferTable.GetSelection()
+	cursorPosStr = buildCursorPosStr(row, col)
+	updateCellPreview(row, col)
+	drawFooterText(fileNameStr, "Full-value box: "+previewShow.describe()+" ("+keyHintOr(actTogglePreview, "zK")+" toggles, "+keyHintOr(actPeek, "K")+" shows a cell once)", cursorPosStr)
+}
+
 // defaultPreviewSeparator is what separates the items of a list value.
 const defaultPreviewSeparator = ";"
 
@@ -92,6 +197,11 @@ type cellPreview struct {
 	// a drag over the box selects the value's own text rather than the cells
 	// behind it, and the stretch is copied when the button is released.
 	sel boxSelection
+
+	// A K peek: the box shows the cell at peekRow, peekCol whatever its
+	// length until the cursor leaves it.
+	peek             bool
+	peekRow, peekCol int
 }
 
 // boxSelection is a stretch of the preview's text: the anchor where the
@@ -443,11 +553,26 @@ func columnTitle(col int) string {
 	return "Column " + I2S(col)
 }
 
-// updateCellPreview shows or hides the preview for the selected cell: the full
-// value of a cell cut by a width limit, or, on a hidden column, the column's
-// name and value, which the fold marker does not show.
+// updateCellPreview shows or hides the preview for the selected cell: the
+// cell a K peek asked for, whatever its length; otherwise as the mode says,
+// the full value of a cell cut by a width limit, or, on a hidden column, the
+// column's name and value, which the fold marker does not show; with the box
+// shown for every cell, any value that is not empty; hidden, nothing.
 func updateCellPreview(row, col int) {
 	if mainView == nil {
+		return
+	}
+	if mainView.peek {
+		if row == mainView.peekRow && col == mainView.peekCol {
+			if text, ok := b.cellAt(row, col); ok && text != "" {
+				mainView.show(columnTitle(col), text, row, col)
+				return
+			}
+		}
+		mainView.peek = false // the cursor moved on
+	}
+	if previewShow == previewOff {
+		mainView.hide()
 		return
 	}
 	if hiddenCols[col] {
@@ -458,9 +583,15 @@ func updateCellPreview(row, col int) {
 	}
 	if text, ok := truncatedCellText(row, col); ok {
 		mainView.show(columnTitle(col), text, row, col)
-	} else {
-		mainView.hide()
+		return
 	}
+	if previewShow == previewAll && row >= b.rowFreeze {
+		if text, ok := b.cellAt(row, col); ok && text != "" {
+			mainView.show(columnTitle(col), text, row, col)
+			return
+		}
+	}
+	mainView.hide()
 }
 
 // hiddenCellText returns the value of a data cell in a hidden column for the

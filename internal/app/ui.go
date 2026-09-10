@@ -18,6 +18,9 @@ func buildCursorPosStr(row, column int) string {
 	if hiddenCols[column] {
 		posStr = "hidden: " + columnTitle(column) + "  |  " + posStr
 	}
+	if marker := previewShow.marker(); marker != "" {
+		posStr = marker + "  |  " + posStr
+	}
 	return posStr
 }
 

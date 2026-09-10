@@ -464,6 +464,10 @@ func runAction(act action, rawCount, count int) {
 			drawFooterText(fileNameStr, "Selection cleared", cursorPosStr)
 			return
 		}
+		if closePeek() {
+			drawFooterText(fileNameStr, "Full value closed", cursorPosStr)
+			return
+		}
 		clearSearch()
 	case actFilter:
 		openFilterDialog()
@@ -477,6 +481,10 @@ func runAction(act action, rawCount, count int) {
 		toggleColumnType()
 	case actToggleWidth:
 		toggleColumnWidth()
+	case actPeek:
+		peekCell()
+	case actTogglePreview:
+		togglePreviewBox()
 	case actYank:
 		yankCells(row, col, row, col)
 	case actYankRow:
