@@ -42,6 +42,7 @@ func setupTabsWithin(t *testing.T, limit int64, contents ...string) (names, skip
 	t.Cleanup(func() {
 		args.AsyncLoad, UI, app, budget, tabIDs, loadStopped = oldAsync, oldUI, oldApp, oldBudget, oldIDs, oldStopped
 		tabs, current, loaded = nil, -1, nil
+		tabLineWidth, tabLineStart, tabSpans = 0, 0, nil
 		visual, cellEdit = visualOff, nil
 	})
 	args.AsyncLoad = false

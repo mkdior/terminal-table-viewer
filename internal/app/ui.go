@@ -665,12 +665,23 @@ func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.
 	case tview.MouseLeftDown, tview.MouseLeftClick, tview.MouseLeftDoubleClick,
 		tview.MouseMiddleClick, tview.MouseRightClick:
 		x, y := event.Position()
-		if row, _, ok := cellUnderPointer(x, y); !ok || row < b.rowFreeze {
+		row, col, ok := cellUnderPointer(x, y)
+		if !ok || row < b.rowFreeze {
 			return tview.MouseConsumed, nil
 		}
-	}
-	if action == tview.MouseLeftClick {
-		userMovedCursor = true
+		switch action {
+		case tview.MouseLeftClick:
+			userMovedCursor = true
+			if hiddenCols[col] { // a click on the fold marker opens the fold
+				unfoldColumns(col, col)
+			}
+		case tview.MouseLeftDoubleClick:
+			// The spreadsheet habit: a double click edits the cell.
+			userMovedCursor = true
+			bufferTable.Select(row, col)
+			startCellEdit(actEdit)
+			return tview.MouseConsumed, nil
+		}
 	}
 	switch action {
 	case tview.MouseScrollUp:

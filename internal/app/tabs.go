@@ -290,6 +290,43 @@ func tabAt(x int) (tab int, ok bool) {
 	return 0, false
 }
 
+// tabLineMouse handles a mouse action at cell x of the tab line and reports
+// whether it took it: a click on a label shows that tab, a middle click
+// closes it (asking about its edits as q does), a click on an edge marker
+// shows the first tab hidden past it, and the wheel steps through the tabs.
+func tabLineMouse(action tview.MouseAction, x int) bool {
+	switch action {
+	case tview.MouseScrollUp:
+		prevTab(1)
+		return true
+	case tview.MouseScrollDown:
+		nextTab(0)
+		return true
+	case tview.MouseLeftClick, tview.MouseLeftDoubleClick, tview.MouseMiddleClick:
+		tab, ok := tabAt(x)
+		if !ok {
+			return true // the empty end of the line
+		}
+		switch tab {
+		case tabsBefore:
+			showTab(tabLineStart - 1)
+		case tabsAfter:
+			last := tabLineStart
+			for _, s := range tabSpans {
+				last = max(last, s.tab)
+			}
+			showTab(last + 1)
+		default:
+			showTab(tab)
+			if action == tview.MouseMiddleClick {
+				requestQuit()
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // refreshTabLine redraws the footer of the tab in front so the tab line shows
 // the progress of the loads behind it.
 func refreshTabLine() {

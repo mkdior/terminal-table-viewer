@@ -101,6 +101,51 @@ func (p *cellPreview) show(title, text string, row, col int) {
 // hide removes the box.
 func (p *cellPreview) hide() { p.text = "" }
 
+// MouseHandler routes a mouse action on the frame's own texts, the tab line
+// and the footer, before the table sees it; everything else goes to the frame
+// (and so to the table) as before. Nothing acts while a cell is being edited.
+func (p *cellPreview) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
+	return func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		if cellEdit == nil && p.frameMouse(action, event) {
+			return true, nil
+		}
+		return p.Frame.MouseHandler()(action, event, setFocus)
+	}
+}
+
+// frameMouse handles a mouse action on the tab line (the frame's first header
+// row when several tabs are open) or the footer (its last row) and reports
+// whether it did.
+func (p *cellPreview) frameMouse(action tview.MouseAction, event *tcell.EventMouse) bool {
+	x, y := event.Position()
+	fx, fy, fw, fh := p.GetInnerRect()
+	if x < fx || x >= fx+fw || y < fy || y >= fy+fh {
+		return false
+	}
+	switch {
+	case len(tabs) > 1 && y == fy:
+		return tabLineMouse(action, x-fx)
+	case y == fy+fh-1:
+		return footerMouse(action, x-fx)
+	}
+	return false
+}
+
+// footerMouse handles a click on the footer: "? help" at the end of the left
+// text opens the help.
+func footerMouse(action tview.MouseAction, x int) bool {
+	if action != tview.MouseLeftClick {
+		return false
+	}
+	hint := "? help"
+	end := uniseg.StringWidth(fileNameStr)
+	if strings.HasSuffix(fileNameStr, hint) && x >= end-uniseg.StringWidth(hint) && x < end {
+		showHelpDialog()
+		return true
+	}
+	return false
+}
+
 // Draw renders the page and then the box at the configured position.
 func (p *cellPreview) Draw(screen tcell.Screen) {
 	if currentContent != nil {

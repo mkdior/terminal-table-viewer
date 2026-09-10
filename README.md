@@ -314,12 +314,21 @@ from one edge to the other instead.
 
 ### Mouse
 
-- Left click: select the cell under the pointer
-- Scroll wheel: move the selection up or down one row
+- Left click: select the cell under the pointer; on a tab in the tab line,
+  show that tab (the `<` and `>` markers show the next hidden one); on the
+  marker of a hidden column, open the fold; on `? help` in the footer, open
+  the help
+- Double click: edit the cell, as `E` does
+- Middle click on a tab: close it, asking about its pending edits as `q` does
+- Scroll wheel: move the selection up or down one row; over the tab line,
+  step through the tabs
 - Click on buttons and checkboxes: works in the search, filter and statistics
   dialogs
 
-Mouse support depends on the terminal; keyboard navigation always works.
+A click that lands on no cell, in the blank area below the last row or on
+the frozen header, does nothing, so clicking the terminal to bring it back to
+the front never loses the cursor. Mouse support depends on the terminal;
+keyboard navigation always works.
 
 ## Features in Detail
 

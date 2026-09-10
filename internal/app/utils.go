@@ -107,9 +107,11 @@ func getHelpContent() string {
 	sb.WriteString("\n")
 
 	sb.WriteString(head("Mouse") + "\n")
-	sb.WriteString(entry("Left click", "Select cell"))
-	sb.WriteString(entry("Scroll wheel", "Move up/down through rows"))
-	sb.WriteString(entry("Click buttons", "Interact with dialogs and forms"))
+	sb.WriteString(entry("Left click", "Select the cell; on a tab, show it; on a fold marker, open it"))
+	sb.WriteString(entry("Double click", "Edit the cell, as E does"))
+	sb.WriteString(entry("Middle click", "On a tab: close it, asking about its edits as q does"))
+	sb.WriteString(entry("Scroll wheel", "Move up/down through rows; over the tab line, step through tabs"))
+	sb.WriteString(entry("Click buttons", "Dialogs and forms; \"? help\" in the footer opens this help"))
 	sb.WriteString("\n")
 
 	sb.WriteString(head("Search and filter") + "\n")
