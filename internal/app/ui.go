@@ -628,13 +628,46 @@ func buildTabView() {
 	bufferTable.SetMouseCapture(handleTableMouse)
 }
 
+// cellUnderPointer returns the row and column of the table cell drawn at
+// screen position x, y in the current frame; ok is false where no cell is:
+// the blank area below the last row or right of the last column, and the
+// frame around the table. The separator right of a cell counts as the cell.
+func cellUnderPointer(x, y int) (row, col int, ok bool) {
+	if currentContent == nil {
+		return 0, 0, false
+	}
+	for pos, cell := range currentContent.cells {
+		if cell == nil {
+			continue
+		}
+		cx, cy, cw := cell.GetLastPosition()
+		if cw > 0 && y == cy && x >= cx && x <= cx+cw {
+			return pos[0], pos[1], true
+		}
+	}
+	return 0, 0, false
+}
+
 // handleTableMouse is the table's mouse capture: the wheel moves the
 // selection one row, clicks count as the user moving the cursor, and nothing
 // reaches the table while a cell is being edited, so the editor stays on its
-// cell instead of the table scrolling away underneath it.
+// cell instead of the table scrolling away underneath it. A click that lands
+// on no data cell (the blank area below the last row or right of the last
+// column, the frozen header) is swallowed: tview would select the cell it
+// computes there, row -1 past the end, and the next draw would clamp that to
+// the first row and scroll to it, so the click that merely brings the
+// terminal back to the front lost the cursor.
 func handleTableMouse(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 	if cellEdit != nil {
 		return action, nil
+	}
+	switch action {
+	case tview.MouseLeftDown, tview.MouseLeftClick, tview.MouseLeftDoubleClick,
+		tview.MouseMiddleClick, tview.MouseRightClick:
+		x, y := event.Position()
+		if row, _, ok := cellUnderPointer(x, y); !ok || row < b.rowFreeze {
+			return tview.MouseConsumed, nil
+		}
 	}
 	if action == tview.MouseLeftClick {
 		userMovedCursor = true
