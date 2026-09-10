@@ -3,13 +3,16 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -185,15 +188,59 @@ func runClipboardToolAsync(tool clipTool, text string, done func(error)) (starte
 	return true
 }
 
+// osc52 is the escape that sets the terminal's clipboard to text.
+func osc52(text string) string {
+	return "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(text)) + "\x1b\\"
+}
+
+// screenDCSChunk is the most GNU screen passes through in one DCS.
+const screenDCSChunk = 256
+
+// muxPassthrough wraps a terminal escape so the multiplexer mux ("tmux" or
+// "screen") hands it to the outer terminal instead of eating it, the way
+// Claude Code sends its clipboard writes: tmux takes a DCS whose body is the
+// escape with every ESC doubled (with allow-passthrough on), GNU screen takes
+// the escape in DCS pieces of at most screenDCSChunk bytes. Any other mux
+// gets the escape as it is.
+func muxPassthrough(seq, mux string) string {
+	switch mux {
+	case "tmux":
+		return "\x1bPtmux;" + strings.ReplaceAll(seq, "\x1b", "\x1b\x1b") + "\x1b\\"
+	case "screen":
+		var sb strings.Builder
+		for len(seq) > 0 {
+			n := min(screenDCSChunk, len(seq))
+			sb.WriteString("\x1bP" + seq[:n] + "\x1b\\")
+			seq = seq[n:]
+		}
+		return sb.String()
+	}
+	return seq
+}
+
+// clipMux names the terminal multiplexer ttv runs inside, "" for none.
+func clipMux() string {
+	switch {
+	case clipGetenv("TMUX") != "":
+		return "tmux"
+	case clipGetenv("STY") != "":
+		return "screen"
+	}
+	return ""
+}
+
 // copyToClipboard sends text to the system clipboard through every channel
-// that can reach it: the OSC 52 escape (which tmux forwards when
-// set-clipboard is on), written at once, and a clipboard tool when one is
-// installed, run in the background (see runClipboardToolAsync). An error comes
-// back at once when no channel can take the text at all. Otherwise the
-// outcome reaches report on the UI goroutine, with the channels used or an
-// error when none applied: at once when there is no tool to wait for, else
-// when the tool has finished or been given up on, in which case pending names
-// the tool still running.
+// that can reach it: the OSC 52 escape, written at once, and a clipboard tool
+// when one is installed, run in the background (see runClipboardToolAsync).
+// Inside tmux or screen the escape also goes out wrapped for the multiplexer
+// to pass on (muxPassthrough), and once more plainly, so it reaches the outer
+// terminal whether the multiplexer forwards clipboard writes itself
+// (set-clipboard on) or only passes escapes through (allow-passthrough on).
+// An error comes back at once when no channel can take the text at all.
+// Otherwise the outcome reaches report on the UI goroutine, with the channels
+// used or an error when none applied: at once when there is no tool to wait
+// for, else when the tool has finished or been given up on, in which case
+// pending names the tool still running.
 func copyToClipboard(text string, report func(channels string, err error)) (pending string, err error) {
 	if len(text) > maxYankBytes {
 		return "", fmt.Errorf("selection is %s; the limit is %s", formatBytes(int64(len(text))), formatBytes(maxYankBytes))
@@ -201,6 +248,12 @@ func copyToClipboard(text string, report func(channels string, err error)) (pend
 	osc := clipboardOSC52 && screenRef != nil && len(text) <= maxOSC52Bytes
 	if osc {
 		screenRef.SetClipboard([]byte(text))
+		if mux := clipMux(); mux != "" {
+			if tty, ok := screenRef.Tty(); ok {
+				seq := osc52(text)
+				_, _ = io.WriteString(tty, seq+muxPassthrough(seq, mux))
+			}
+		}
 	}
 	tool, ok := clipboardCommand()
 	if !ok {
@@ -246,10 +299,12 @@ func tsv(rows [][]string) string {
 }
 
 // yankCells copies a rectangular block of b to the register and the clipboard
-// and reports the outcome in the footer. Rows r1..r2 and columns c1..c2 are
-// inclusive. The yank itself is done at once; while the clipboard tool is
-// still running the footer says so, then names the channels that took the
-// text.
+// and reports the outcome in the footer, with the size of the text in bytes
+// and characters. Rows r1..r2 and columns c1..c2 are inclusive. A block of
+// empty cells is not copied: there is nothing to put in the clipboard, and
+// the register keeps what it has. The yank itself is done at once; while the
+// clipboard tool is still running the footer says so, then names the
+// channels that took the text.
 func yankCells(r1, c1, r2, c2 int) {
 	if n := max(r1, r2) - min(r1, r2) + 1; n > maxStreamYankRows && b.streamed() {
 		// Every row would be read from disk and held; a yank that size belongs
@@ -258,15 +313,19 @@ func yankCells(r1, c1, r2, c2 int) {
 		return
 	}
 	rows := b.cellBlock(r1, c1, r2, c2)
-	setRegister(rows)
 	text := tsv(rows)
+	if strings.Trim(text, "\t\n") == "" {
+		drawFooterText(fileNameStr, "Nothing to copy", cursorPosStr)
+		return
+	}
+	setRegister(rows)
 	what := fmt.Sprintf("%d rows x %d columns", len(rows), c2-c1+1)
 	if len(rows) == 1 && c1 == c2 {
 		what = "1 cell"
 	} else if c1 == 0 && c2 == b.colCount()-1 {
 		what = fmt.Sprintf("%d rows", len(rows))
 	}
-	yanked := fmt.Sprintf("Yanked %s (%s)", what, formatBytes(int64(len(text))))
+	yanked := fmt.Sprintf("Yanked %s (%s, %d characters)", what, formatBytes(int64(len(text))), utf8.RuneCountInString(text))
 	pending, err := copyToClipboard(text, func(channels string, err error) {
 		if err != nil {
 			drawFooterText(fileNameStr, yanked+"; clipboard failed: "+err.Error(), cursorPosStr)

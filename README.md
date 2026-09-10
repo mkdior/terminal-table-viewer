@@ -481,11 +481,15 @@ Removals copy too: `x`, `dd`, `d` with a motion and visual `d` send what they
 remove, as vim does with `clipboard=unnamedplus`.
 
 TTV detects the clipboard of the system it runs on and also sends the OSC 52
-terminal escape (tmux forwards it when `set -g set-clipboard on` is set;
-payloads over 1MB skip it). The escape goes out at once; the clipboard tool
+terminal escape (payloads over 1MB skip it). Inside tmux or GNU screen the
+escape is sent plainly and wrapped for the multiplexer to pass through, so it
+reaches the outer terminal whether tmux forwards clipboard writes itself
+(`set -g set-clipboard on`) or only passes escapes on (`allow-passthrough
+on`). The escape goes out at once; the clipboard tool
 runs in the background, so a slow one (Windows interop from WSL, for example)
-never freezes the table. The footer says "Yanked 3000 rows (52 KB); clip.exe
-running" until the tool is done, then which channels took the text. A tool
+never freezes the table. The footer says "Yanked 3000 rows (52 KB, 51234
+characters); clip.exe running" until the tool is done, then which channels
+took the text. A block of empty cells is nothing to copy and says so. A tool
 that has not finished after ten seconds is given up on and the footer says
 so; the yank is still in the in-app register for `p`.
 
