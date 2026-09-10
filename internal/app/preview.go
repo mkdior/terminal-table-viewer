@@ -81,6 +81,29 @@ type cellPreview struct {
 	box      *tview.TextView
 	text     string // full value to show; "" hides the box
 	row, col int    // the selected cell the box belongs to
+
+	// The box as drawn last, for the mouse: its rectangle (bw is 0 when no
+	// box was drawn), the lines of text shown and where each begins in text.
+	bx, by, bw, bh int
+	lines          []string
+	starts         []int
+
+	// Text selected in the box with the mouse, after Claude Code's selection:
+	// a drag over the box selects the value's own text rather than the cells
+	// behind it, and the stretch is copied when the button is released.
+	sel boxSelection
+}
+
+// boxSelection is a stretch of the preview's text: the anchor where the
+// button went down and the focus under the pointer, as byte offsets.
+type boxSelection struct {
+	on, dragging  bool
+	anchor, focus int
+}
+
+// bounds returns the selected stretch in order.
+func (s boxSelection) bounds() (from, to int) {
+	return min(s.anchor, s.focus), max(s.anchor, s.focus)
 }
 
 // newCellPreview wraps the main page frame.
@@ -92,14 +115,158 @@ func newCellPreview(frame *tview.Frame) *cellPreview {
 	return &cellPreview{Frame: frame, box: box}
 }
 
-// show displays text in the box; an empty text hides it.
+// show displays text in the box; an empty text hides it. A selection made in
+// the box belongs to the value it showed and goes with it.
 func (p *cellPreview) show(title, text string, row, col int) {
+	if text != p.text || row != p.row || col != p.col {
+		p.sel = boxSelection{}
+	}
 	p.text, p.row, p.col = text, row, col
 	p.box.SetTitle(" " + title + " ")
 }
 
 // hide removes the box.
-func (p *cellPreview) hide() { p.text = "" }
+func (p *cellPreview) hide() {
+	p.text = ""
+	p.sel = boxSelection{}
+}
+
+// clearSelection drops the text selected in the box and reports whether
+// there was one.
+func (p *cellPreview) clearSelection() bool {
+	on := p.sel.on
+	p.sel = boxSelection{}
+	return on
+}
+
+// lineStarts finds where each displayed line begins in text: the lines are
+// stretches of the text in order (word wrapping and the item split only drop
+// the spaces and separators between them), so a selection over several lines
+// maps back onto the value itself, separators included.
+func lineStarts(text string, lines []string) []int {
+	starts := make([]int, len(lines))
+	pos := 0
+	for i, line := range lines {
+		if at := strings.Index(text[pos:], line); at >= 0 {
+			pos += at
+		}
+		starts[i] = pos
+		pos += len(line)
+	}
+	return starts
+}
+
+// offsetAt maps a screen position inside the box to a byte offset in the
+// text: the start of the grapheme under the pointer, the line's start left
+// of its text, its end right of it. ok is false outside the box.
+func (p *cellPreview) offsetAt(x, y int) (offset int, ok bool) {
+	if p.bw == 0 || x < p.bx || x >= p.bx+p.bw || y < p.by || y >= p.by+p.bh {
+		return 0, false
+	}
+	line := clampInt(y-(p.by+1), 0, len(p.lines)-1) // the border row above
+	if len(p.lines) == 0 {
+		return 0, true
+	}
+	text, start := p.lines[line], p.starts[line]
+	col := p.bx + 2 // border and padding
+	gr := uniseg.NewGraphemes(text)
+	for gr.Next() {
+		if w := gr.Width(); x < col+w {
+			from, _ := gr.Positions()
+			return start + from, true
+		} else {
+			col += w
+		}
+	}
+	return start + len(text), true
+}
+
+// boxMouse handles a mouse action over the preview box and reports whether
+// it took it. A press anchors a text selection, a move with the button held
+// extends it, the release copies it (with copy_on_select) and leaves it
+// highlighted, a click clears it, a double click selects the whole value.
+// A drag that started on a cell keeps selecting cells, box or no box, and a
+// press elsewhere clears the box's selection.
+func (p *cellPreview) boxMouse(action tview.MouseAction, event *tcell.EventMouse) bool {
+	x, y := event.Position()
+	offset, inBox := p.offsetAt(x, y)
+	if mouseDrag.pressed || p.text == "" {
+		return false
+	}
+	if !inBox {
+		if action == tview.MouseLeftDown {
+			p.sel = boxSelection{}
+		}
+		return false
+	}
+	switch action {
+	case tview.MouseLeftDown:
+		p.sel = boxSelection{on: true, dragging: true, anchor: offset, focus: offset}
+	case tview.MouseMove:
+		if p.sel.dragging && event.Buttons()&tcell.ButtonPrimary != 0 {
+			p.sel.focus = offset
+		}
+	case tview.MouseLeftUp:
+		if p.sel.dragging {
+			p.sel.dragging = false
+			if from, to := p.sel.bounds(); from == to {
+				p.sel.on = false // no drag: the click that follows keeps it cleared
+			} else if clipboardCopyOnSelect {
+				p.copySelection()
+			}
+		}
+	case tview.MouseLeftClick:
+		p.sel = boxSelection{}
+	case tview.MouseLeftDoubleClick:
+		p.sel = boxSelection{on: true, anchor: 0, focus: len(p.text)}
+		if clipboardCopyOnSelect {
+			p.copySelection()
+		}
+	case tview.MouseScrollUp, tview.MouseScrollDown, tview.MouseScrollLeft, tview.MouseScrollRight:
+		return false // the wheel still moves the table under the box
+	}
+	return true
+}
+
+// copySelection copies the text selected in the box to the register and the
+// clipboard and reports it in the footer.
+func (p *cellPreview) copySelection() {
+	from, to := p.sel.bounds()
+	text := p.text[from:to]
+	if strings.TrimSpace(text) == "" {
+		drawFooterText(fileNameStr, "Nothing to copy", cursorPosStr)
+		return
+	}
+	setRegister([][]string{{text}})
+	what := fmt.Sprintf("Copied %d characters of %s", utf8.RuneCountInString(text), columnTitle(p.col))
+	if from == 0 && to == len(p.text) {
+		what = fmt.Sprintf("Copied the whole value of %s (%d characters)", columnTitle(p.col), utf8.RuneCountInString(text))
+	}
+	announceCopy(what, text)
+}
+
+// drawSelection paints the selection background over the selected stretch
+// of the box's text, as drawn.
+func (p *cellPreview) drawSelection(screen tcell.Screen) {
+	if !p.sel.on {
+		return
+	}
+	from, to := p.sel.bounds()
+	for i, line := range p.lines {
+		x, y := p.bx+2, p.by+1+i
+		gr := uniseg.NewGraphemes(line)
+		for gr.Next() {
+			w := gr.Width()
+			if start, _ := gr.Positions(); start+p.starts[i] >= from && start+p.starts[i] < to {
+				for dx := 0; dx < w; dx++ {
+					mainc, combc, style, _ := screen.GetContent(x+dx, y)
+					screen.SetContent(x+dx, y, mainc, combc, style.Background(theme.Selection))
+				}
+			}
+			x += w
+		}
+	}
+}
 
 // MouseHandler routes a mouse action on the frame's own texts, the tab line
 // and the footer, before the table sees it; everything else goes to the frame
@@ -128,7 +295,7 @@ func (p *cellPreview) frameMouse(action tview.MouseAction, event *tcell.EventMou
 	case y == fy+fh-1:
 		return footerMouse(action, x-fx)
 	}
-	return false
+	return p.boxMouse(action, event)
 }
 
 // footerMouse handles a click on the footer: "? help" at the end of the left
@@ -161,6 +328,7 @@ func (p *cellPreview) Draw(screen tcell.Screen) {
 	}
 	pinColumnOffset(frameW)
 	p.Frame.Draw(screen)
+	p.bw = 0 // no box drawn this frame unless it is below
 	if cellEdit != nil {
 		cellEdit.draw(screen)
 		return
@@ -181,6 +349,9 @@ func (p *cellPreview) Draw(screen tcell.Screen) {
 	x, y := p.origin(w, h, tx, ty, tw, th)
 	p.box.SetRect(x, y, w, h)
 	p.box.Draw(screen)
+	p.bx, p.by, p.bw, p.bh = x, y, w, h
+	p.lines, p.starts = lines, lineStarts(p.text, lines)
+	p.drawSelection(screen)
 }
 
 // origin returns the top-left corner of a w x h box inside the table area.

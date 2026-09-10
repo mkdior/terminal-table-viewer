@@ -17,6 +17,7 @@ func smallUI(t *testing.T) tcell.SimulationScreen {
 	bufferTable = tview.NewTable().SetSelectable(true, true).SetFixed(1, 1)
 	bufferTable.SetSelectedStyle(theme.selectedStyle())
 	bufferTable.SetSelectionChangedFunc(selectionChanged)
+	bufferTable.SetMouseCapture(handleTableMouse)
 	drawBuffer(b, bufferTable)
 	bufferTable.Select(1, 0)
 	bufferTable.Focus(func(tview.Primitive) {})
@@ -239,6 +240,98 @@ func TestRightAndMiddleClickAndSidewaysWheel(t *testing.T) {
 	handleTableMouse(tview.MouseScrollLeft, mouse(x, y, tcell.WheelLeft))
 	if _, c := bufferTable.GetSelection(); c != 0 {
 		t.Errorf("and stops at the first column: %d", c)
+	}
+}
+
+// viewClick sends a mouse action to the main view's handler, as the page
+// container does for the page in front.
+func viewClick(action tview.MouseAction, x, y int, buttons tcell.ButtonMask) bool {
+	consumed, _ := mainView.MouseHandler()(action, mouse(x, y, buttons), func(tview.Primitive) {})
+	return consumed
+}
+
+func TestDragOverThePreviewBoxSelectsItsText(t *testing.T) {
+	screen := smallUI(t)
+	ran := stubClipboard(t, map[string]bool{"xclip": true}, map[string]string{"DISPLAY": ":0"}, "linux", false)
+	oldCopy := clipboardCopyOnSelect
+	t.Cleanup(func() {
+		clipboardCopyOnSelect, visual, tableRegister, lineRegister = oldCopy, visualOff, nil, nil
+		mouseDrag.pressed, mouseDrag.dragging = false, false
+	})
+	clipboardCopyOnSelect = true
+	// A list value in a width-limited column shows in the box, one item per line.
+	b.cont[2][1] = "red; green; blue"
+	wrappedColumns[1] = 5
+	drawBuffer(b, bufferTable)
+	bufferTable.Select(2, 1)
+	draw := func() {
+		mainView.Draw(screen)
+		screen.Show()
+	}
+	draw()
+	if mainView.bw == 0 || len(mainView.lines) != 3 || mainView.starts[1] != 5 || mainView.starts[2] != 12 {
+		t.Fatalf("box %dx%d lines %q starts %v", mainView.bw, mainView.bh, mainView.lines, mainView.starts)
+	}
+	bx, by := mainView.bx, mainView.by // the text starts two cells in, one row down
+
+	// Drag from the g of green (line 2) to the l of blue (line 3): the stretch
+	// of the value between them, separator included, is copied on release.
+	if !viewClick(tview.MouseLeftDown, bx+2, by+2, tcell.ButtonPrimary) || !mainView.sel.on {
+		t.Fatal("a press in the box anchors a text selection")
+	}
+	viewClick(tview.MouseMove, bx+3, by+3, tcell.ButtonPrimary)
+	viewClick(tview.MouseLeftUp, bx+3, by+3, tcell.ButtonNone)
+	if len(*ran) != 1 || (*ran)[0] != "xclip:green; b" || string(lineRegister) != "green; b" {
+		t.Errorf("copied %q register %q", *ran, string(lineRegister))
+	}
+	if !strings.HasPrefix(statusMessage, "Copied 8 characters of h2") || !mainView.sel.on || mainView.sel.dragging {
+		t.Errorf("status %q selection %+v", statusMessage, mainView.sel)
+	}
+	if r, c := bufferTable.GetSelection(); visual != visualOff || r != 2 || c != 1 {
+		t.Errorf("the cells behind the box are left alone: visual %v selection %d,%d", visual, r, c)
+	}
+	draw()
+	cells, w, _ := screen.GetContents()
+	bgAt := func(x, y int) tcell.Color {
+		_, bg, _ := cells[y*w+x].Style.Decompose()
+		return bg
+	}
+	if bgAt(bx+2, by+2) != theme.Selection || bgAt(bx+2, by+1) == theme.Selection || bgAt(bx+3, by+3) == theme.Selection {
+		t.Errorf("the selected stretch is highlighted: g %v, r %v, l %v", bgAt(bx+2, by+2), bgAt(bx+2, by+1), bgAt(bx+3, by+3))
+	}
+
+	// A click clears it, a double click takes the whole value, Esc clears too.
+	viewClick(tview.MouseLeftClick, bx+2, by+1, tcell.ButtonNone)
+	if mainView.sel.on {
+		t.Error("a click clears the selection")
+	}
+	viewClick(tview.MouseLeftDoubleClick, bx+2, by+1, tcell.ButtonNone)
+	if (*ran)[len(*ran)-1] != "xclip:red; green; blue" || !strings.HasPrefix(statusMessage, "Copied the whole value of h2 (16 characters)") {
+		t.Errorf("double click: %q status %q", (*ran)[len(*ran)-1], statusMessage)
+	}
+	press(t, "esc")
+	if mainView.sel.on || statusMessage != "Selection cleared" {
+		t.Errorf("Esc clears: %+v %q", mainView.sel, statusMessage)
+	}
+
+	// A drag that started on a cell keeps selecting cells, box or no box.
+	x1, y1 := cellPos(t, 1, 0)
+	viewClick(tview.MouseLeftDown, x1, y1, tcell.ButtonPrimary)
+	viewClick(tview.MouseMove, bx+2, by+2, tcell.ButtonPrimary)
+	if visual != visualBlock || mainView.sel.on {
+		t.Errorf("a cell drag over the box: visual %v box selection %v", visual, mainView.sel.on)
+	}
+	viewClick(tview.MouseLeftUp, bx+2, by+2, tcell.ButtonNone)
+	press(t, "esc")
+
+	// With copy_on_select off the stretch is selected and waits.
+	clipboardCopyOnSelect = false
+	before := len(*ran)
+	viewClick(tview.MouseLeftDown, bx+2, by+1, tcell.ButtonPrimary)
+	viewClick(tview.MouseMove, bx+5, by+1, tcell.ButtonPrimary)
+	viewClick(tview.MouseLeftUp, bx+5, by+1, tcell.ButtonNone)
+	if len(*ran) != before || !mainView.sel.on {
+		t.Errorf("no copy on release: %d copies, selection %+v", len(*ran)-before, mainView.sel)
 	}
 }
 

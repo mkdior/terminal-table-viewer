@@ -460,6 +460,10 @@ func runAction(act action, rawCount, count int) {
 		if cancelPass() {
 			return // the pass reports its end in the footer
 		}
+		if mainView != nil && mainView.clearSelection() {
+			drawFooterText(fileNameStr, "Selection cleared", cursorPosStr)
+			return
+		}
 		clearSearch()
 	case actFilter:
 		openFilterDialog()

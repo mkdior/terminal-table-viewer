@@ -323,7 +323,9 @@ from one edge to the other instead.
   is released the block is copied to the clipboard (`copy_on_select` in the
   `[clipboard]` section turns that off) and the selection stays, so `y`
   copies it again, `d` and `x` remove it, `p` pastes over it, and Esc or a
-  click clears it
+  click clears it. Over the box that shows a cut cell's full value, a drag
+  selects the value's own text instead, across its lines, and copies that
+  stretch on release; a double click there selects the whole value
 - Double click: edit the cell, as `E` does
 - Right click: clear the selection; without one, paste the register over the
   cell, as `p` does

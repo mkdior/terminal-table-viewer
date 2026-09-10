@@ -325,18 +325,24 @@ func yankCells(r1, c1, r2, c2 int) {
 	} else if c1 == 0 && c2 == b.colCount()-1 {
 		what = fmt.Sprintf("%d rows", len(rows))
 	}
-	yanked := fmt.Sprintf("Yanked %s (%s, %d characters)", what, formatBytes(int64(len(text))), utf8.RuneCountInString(text))
+	announceCopy(fmt.Sprintf("Yanked %s (%s, %d characters)", what, formatBytes(int64(len(text))), utf8.RuneCountInString(text)), text)
+}
+
+// announceCopy sends text to the clipboard and reports in the footer, after
+// what was copied (did): the channels that took it, the tool still running,
+// or the failure.
+func announceCopy(did, text string) {
 	pending, err := copyToClipboard(text, func(channels string, err error) {
 		if err != nil {
-			drawFooterText(fileNameStr, yanked+"; clipboard failed: "+err.Error(), cursorPosStr)
+			drawFooterText(fileNameStr, did+"; clipboard failed: "+err.Error(), cursorPosStr)
 			return
 		}
-		drawFooterText(fileNameStr, yanked+" via "+channels, cursorPosStr)
+		drawFooterText(fileNameStr, did+" via "+channels, cursorPosStr)
 	})
 	switch {
 	case err != nil:
-		drawFooterText(fileNameStr, yanked+"; clipboard failed: "+err.Error(), cursorPosStr)
+		drawFooterText(fileNameStr, did+"; clipboard failed: "+err.Error(), cursorPosStr)
 	case pending != "":
-		drawFooterText(fileNameStr, yanked+"; "+pending+" running", cursorPosStr)
+		drawFooterText(fileNameStr, did+"; "+pending+" running", cursorPosStr)
 	}
 }

@@ -115,8 +115,9 @@ func getHelpContent() string {
 	sb.WriteString(entry("Scroll wheel", "Move a row, sideways a column; over the tab line, step tabs"))
 	sb.WriteString(entry("Click buttons", "Dialogs and forms; \"? help\" in the footer opens this help"))
 	sb.WriteString("  A dragged selection stays, as after v: y copies it again, d and x remove\n")
-	sb.WriteString("  it, Esc or a click clears it. copy_on_select in [clipboard] turns the\n")
-	sb.WriteString("  copy on release off.\n\n")
+	sb.WriteString("  it, Esc or a click clears it. A drag over the full-value box selects the\n")
+	sb.WriteString("  value's text instead (a double click all of it) and copies that stretch.\n")
+	sb.WriteString("  copy_on_select in [clipboard] turns the copy on release off.\n\n")
 
 	sb.WriteString(head("Search and filter") + "\n")
 	sb.WriteString("  Search is case-insensitive unless Case Sensitive is checked; Tab moves\n")
